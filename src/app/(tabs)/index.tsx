@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import { FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,6 +18,9 @@ import { PREFECTURES } from '@/domain/prefectures';
 import type { Area, Place, Station } from '@/domain/types';
 import type { UgcCounts } from '@/domain/ugc';
 import { useApp } from '@/state/AppContext';
+import { setSessionOrigin } from '@/state/searchSession';
+import { HeatCard } from '@/ui/Heat';
+import { useHeat } from '@/ui/useHeat';
 import { Button, Chip, DemoBanner, EmptyState, ErrorState, Icon, IconButton, Loading, Notice, Segmented, TextField, ToggleRow, type IconName } from '@/ui/components';
 import { errorMessage } from '@/ui/errors';
 import { getCurrentLocationOnce, LOCATION_FAILURE_MESSAGE } from '@/ui/location';
@@ -46,6 +50,7 @@ export default function SearchScreen() {
 
   const setOrigin = (o: SearchOrigin) => {
     setOriginState(o);
+    setSessionOrigin(o);
     // 前回の基準点として端末に保存（現在地は保存しない）
     lastOrigin.save(o).catch(() => undefined);
   };
@@ -56,7 +61,10 @@ export default function SearchScreen() {
     lastOrigin
       .load()
       .then((o) => {
-        if (alive && o) setOriginState(o);
+        if (alive && o) {
+          setOriginState(o);
+          setSessionOrigin(o);
+        }
       })
       .catch(() => undefined)
       .finally(() => alive && setOriginReady(true));
@@ -105,6 +113,8 @@ export default function SearchScreen() {
   const areaNames = useMemo(() => Object.fromEntries(places.filter((p) => p.areaName).map((p) => [p.areaId, p.areaName!])), [places]);
 
   // 地図と一覧は同じ結果配列を使う
+  const heat = useHeat(originReady ? origin : null);
+
   const results = useMemo(
     () => searchPlaces({ places, origin, filters, query, profile, now, settings: config.settings, areaNames }),
     [places, origin, filters, query, profile, now, config.settings, areaNames],
@@ -231,7 +241,15 @@ export default function SearchScreen() {
           keyExtractor={(r) => r.place.id}
           contentContainerStyle={{ paddingTop: space.md, paddingBottom: space.xxl }}
           ListHeaderComponent={
-            results.length ? (
+            <View>
+              <View style={styles.heatWrap}>
+                <HeatCard state={heat} now={now} placeLabel={origin.label} />
+                <View style={styles.quick}>
+                  <QuickAction icon="snow" title="いますぐ涼みたい" note="近くで開いている場所" onPress={() => router.push('/cool-now')} primary />
+                  <QuickAction icon="walk" title="お散歩プラン" note="休憩しながら歩く" onPress={() => router.push('/walk')} />
+                </View>
+              </View>
+            {results.length ? (
               <View style={styles.listHead}>
                 <Text style={styles.count}>
                   {results.length}
@@ -241,7 +259,8 @@ export default function SearchScreen() {
                   {filters.includeBaseUnconfirmed ? '未確認の候補も表示中' : '室内同伴・冷房の確認情報あり'}・{filters.radiusKm}km以内・距離順
                 </Text>
               </View>
-            ) : undefined
+            ) : null}
+            </View>
           }
           renderItem={({ item }) => <PlaceCard result={item} originLabel={origin.label} counts={counts[item.place.id]} />}
           ListEmptyComponent={
@@ -278,6 +297,29 @@ export default function SearchScreen() {
         </View>
       </Modal>
     </SafeAreaView>
+  );
+}
+
+function QuickAction({ icon, title, note, onPress, primary }: { icon: IconName; title: string; note: string; onPress: () => void; primary?: boolean }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.quickBtn, primary && styles.quickPrimary, pressed && { opacity: 0.88 }]}
+      accessibilityRole="button"
+      accessibilityLabel={`${title}。${note}`}
+    >
+      <View style={[styles.quickIcon, primary && { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+        <Icon name={icon} size={20} color={primary ? colors.white : colors.primary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.quickTitle, primary && { color: colors.white }]} numberOfLines={1}>
+          {title}
+        </Text>
+        <Text style={[type.caption, primary && { color: 'rgba(255,255,255,0.9)' }]} numberOfLines={1}>
+          {note}
+        </Text>
+      </View>
+    </Pressable>
   );
 }
 
@@ -590,6 +632,12 @@ const styles = StyleSheet.create({
   filterText: { fontSize: 14, fontWeight: '700', color: colors.primaryInk },
   countDot: { minWidth: 20, height: 20, borderRadius: 10, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
   countText: { fontSize: 12, fontWeight: '800', color: colors.primary },
+  heatWrap: { marginHorizontal: space.lg, marginBottom: space.lg, gap: space.sm },
+  quick: { flexDirection: 'row', gap: space.sm },
+  quickBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 60, padding: space.md, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, ...shadow.card },
+  quickPrimary: { backgroundColor: colors.primary, borderColor: colors.primary },
+  quickIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  quickTitle: { fontSize: 14, fontWeight: '800', color: colors.text },
   listHead: { flexDirection: 'row', alignItems: 'flex-end', gap: space.md, marginHorizontal: space.lg, marginBottom: space.md },
   count: { fontSize: 22, fontWeight: '800', color: colors.text },
   sheetTabs: { marginBottom: space.sm },

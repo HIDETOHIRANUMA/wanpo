@@ -22,12 +22,15 @@ import {
   type ReportInput,
   type ReportResult,
   type ReportService,
+  type HeatResult,
+  type HeatService,
   type UgcService,
 } from '../repository';
 import { validateReportInput } from '../reportValidation';
 import { AREAS, STATIONS } from './areas';
 import { createDemoPlaces } from './places';
-import { createDemoReviews } from './ugc';
+import { createDemoPhotos, createDemoReviews } from './ugc';
+import { demoHeatForecast } from '@/domain/heat';
 
 /** デモ：架空データのみ。外部 Auth・メール送信・報告 API は一切呼ばない */
 export class DemoRepository implements PlaceRepository {
@@ -160,12 +163,14 @@ interface DemoUgcState {
  */
 export class DemoUgc implements UgcService {
   private seeded: Review[];
+  private seededPhotoRows: { photo: UserPhoto; author: string }[];
   constructor(
     private store: LocalStore,
     private auth: AuthService,
     now: Date = new Date(),
   ) {
     this.seeded = createDemoReviews(now);
+    this.seededPhotoRows = createDemoPhotos(now);
   }
 
   private async state(): Promise<DemoUgcState> {
@@ -175,6 +180,10 @@ export class DemoUgc implements UgcService {
   private async requireSignedIn() {
     if (!(await this.auth.getState()).signedIn) throw new RepoError('auth_required');
   }
+  private visibleSeededPhotos(st: DemoUgcState): UserPhoto[] {
+    return this.seededPhotoRows.filter((x) => !this.flagged(st, 'photo', x.photo.id) && !st.blocked.includes(x.author)).map((x) => x.photo);
+  }
+
   private flagged(st: DemoUgcState, target: 'review' | 'photo', id: string) {
     return st.flags.some((f) => f.target === target && f.id === id);
   }
@@ -188,7 +197,7 @@ export class DemoUgc implements UgcService {
     const out: Record<string, UgcCounts> = {};
     for (const id of placeIds) {
       const reviews = [...this.seeded, ...st.reviews].filter((r) => r.placeId === id && !this.flagged(st, 'review', r.id) && !st.blocked.includes(r.nickname));
-      const photos = st.photos.filter((p) => p.placeId === id && !this.flagged(st, 'photo', p.id));
+      const photos = [...st.photos, ...this.visibleSeededPhotos(st)].filter((p) => p.placeId === id && !this.flagged(st, 'photo', p.id));
       if (reviews.length || photos.length) out[id] = { reviewCount: reviews.length, photoCount: photos.length };
     }
     return out;
@@ -196,7 +205,9 @@ export class DemoUgc implements UgcService {
 
   async listReviews(placeId: string): Promise<Review[]> {
     const st = await this.state();
-    const mine = st.reviews.filter((r) => r.placeId === placeId).map(({ requestId: _r, createdAt: _c, ...rest }) => rest);
+    const mine = st.reviews
+      .filter((r) => r.placeId === placeId)
+      .map(({ requestId: _r, createdAt: _c, ...rest }) => ({ ...rest, dogSize: rest.dogSize ?? null, dogBreed: rest.dogBreed ?? null }));
     // デモの架空の口コミは投稿者IDがないため、ニックネーム単位でブロックを扱う
     const seeded = this.seeded.filter((r) => r.placeId === placeId && !this.flagged(st, 'review', r.id) && !st.blocked.includes(r.nickname));
     return [...mine, ...seeded].sort((a, b) => (b.publishedAt ?? '').localeCompare(a.publishedAt ?? ''));
@@ -204,10 +215,12 @@ export class DemoUgc implements UgcService {
 
   async listPhotos(placeId: string): Promise<UserPhoto[]> {
     const st = await this.state();
-    return st.photos
+    const mine = st.photos
       .filter((p) => p.placeId === placeId)
-      .map(({ requestId: _r, createdAt: _c, ...rest }) => rest)
-      .sort((a, b) => (b.publishedAt ?? '').localeCompare(a.publishedAt ?? ''));
+      .map(({ requestId: _r, createdAt: _c, ...rest }) => ({ ...rest, dogSize: rest.dogSize ?? null, dogBreed: rest.dogBreed ?? null }));
+    // デモのイラスト（写真ではない）。通報・ブロックしたものは出さない
+    const seeded = this.visibleSeededPhotos(st).filter((p) => p.placeId === placeId);
+    return [...mine, ...seeded].sort((a, b) => (b.publishedAt ?? '').localeCompare(a.publishedAt ?? ''));
   }
 
   async submitReview(i: ReviewInput): Promise<UgcSubmitResult> {
@@ -226,6 +239,8 @@ export class DemoUgc implements UgcService {
       body: i.body.trim(),
       tags: i.tags,
       visitedOn: i.visitedOn,
+      dogSize: i.dogSize,
+      dogBreed: i.dogBreed?.trim() || null,
       publishedAt: now,
       mine: true,
       status: 'approved' as const,
@@ -251,6 +266,8 @@ export class DemoUgc implements UgcService {
       placeId: i.placeId,
       url: i.image.dataUri,
       caption: i.caption.trim() || null,
+      dogSize: i.dogSize,
+      dogBreed: i.dogBreed?.trim() || null,
       publishedAt: now,
       mine: true,
       status: 'approved' as const,
@@ -284,11 +301,12 @@ export class DemoUgc implements UgcService {
   async blockAuthor(target: 'review' | 'photo', id: string): Promise<void> {
     await this.requireSignedIn();
     const st = await this.state();
-    // デモの写真はすべて自分の投稿なので、ブロックできるのは架空の口コミの投稿者だけ
-    const review = target === 'review' ? this.seeded.find((r) => r.id === id) : undefined;
-    if (!review) throw new RepoError('validation', 'target');
-    if (st.blocked.includes(review.nickname)) return;
-    await this.store.setJson(DEMO_UGC_KEY, { ...st, blocked: [...st.blocked, review.nickname] });
+    // ブロックできるのは架空の口コミ・イラストの投稿者だけ（自分の投稿は対象外）
+    const author =
+      target === 'review' ? this.seeded.find((r) => r.id === id)?.nickname : this.seededPhotoRows.find((x) => x.photo.id === id)?.author;
+    if (!author) throw new RepoError('validation', 'target');
+    if (st.blocked.includes(author)) return;
+    await this.store.setJson(DEMO_UGC_KEY, { ...st, blocked: [...st.blocked, author] });
   }
 
   async unblockAll(): Promise<number> {
@@ -299,10 +317,17 @@ export class DemoUgc implements UgcService {
   }
 }
 
+/** デモの暑さ指数（架空の値。月と時刻から作る） */
+export class DemoHeat implements HeatService {
+  async forecast(_at: LatLng, now: Date): Promise<HeatResult> {
+    return { status: 'ok', forecast: demoHeatForecast(now) };
+  }
+}
+
 export function createDemoBackend(store: LocalStore, now = new Date()): Backend {
   const auth = new DemoAuth(store);
   const places = new DemoRepository(now);
   const ugc = new DemoUgc(store, auth, now);
   places.ugc = ugc;
-  return { mode: 'demo', places, auth, reports: new DemoReports(store, auth), ugc };
+  return { mode: 'demo', places, auth, reports: new DemoReports(store, auth), ugc, heat: new DemoHeat() };
 }

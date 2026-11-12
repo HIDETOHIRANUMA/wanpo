@@ -11,3 +11,7 @@ enable_signup = true
 # OTP の有効期限（秒）。既定 3600
 otp_expiry = 3600
 otp_length = 6
+
+[functions.heat-index]
+# 地点番号だけを受け取る公開関数（ログイン不要）。取得元へは 30 分キャッシュ経由で問い合わせる
+verify_jwt = false

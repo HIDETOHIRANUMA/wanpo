@@ -1,5 +1,6 @@
 import type {
   DogHours,
+  DogSize,
   DogZone,
   ExtraRequirement,
   HourException,
@@ -11,7 +12,7 @@ import type {
   WeightLimit,
   Weekday,
 } from '@/domain/types';
-import { CARRY_METHODS } from '@/domain/types';
+import { CARRY_METHODS, PLACE_CATEGORIES } from '@/domain/types';
 import type { Review, ReviewTag, UgcStatus } from '@/domain/ugc';
 import { REVIEW_TAGS } from '@/domain/ugc';
 import { validateHttpsUrl } from '@/domain/contact';
@@ -60,6 +61,7 @@ export function mapZone(z: ZoneRow | undefined): DogZone {
       carry: { status: 'unknown' },
       certificate: { status: 'unknown' },
       extraRequirements: [],
+      ...UNKNOWN_DOG_DETAILS,
     };
   }
   const methods = (z.carry_methods ?? []).filter((m) => CARRY_METHODS.includes(m));
@@ -81,6 +83,41 @@ export function mapZone(z: ZoneRow | undefined): DogZone {
           ? { status: 'required', text: z.certificate_text ?? undefined }
           : { status: 'unknown' },
     extraRequirements: mapExtra(z.extra_requirements),
+    ...mapDogDetails(z),
+  };
+}
+
+const UNKNOWN_DOG_DETAILS = {
+  breed: { status: 'unknown' },
+  maxDogs: { kind: 'unknown' },
+  floor: 'unknown',
+  dogMenu: 'unknown',
+  dogSeats: null,
+} satisfies Pick<DogZone, 'breed' | 'maxDogs' | 'floor' | 'dogMenu' | 'dogSeats'>;
+
+/** 犬種・頭数・床・犬用メニュー・席数。列がない・壊れた値は「不明」 */
+export function mapDogDetails(z: ZoneRow): Pick<DogZone, 'breed' | 'maxDogs' | 'floor' | 'dogMenu' | 'dogSeats'> {
+  const breedText = z.breed_text?.trim() || undefined;
+  const breed: DogZone['breed'] =
+    z.breed_restriction === 'none'
+      ? { status: 'none' }
+      : z.breed_restriction === 'brachycephalic_ng'
+        ? { status: 'brachycephalic_ng', text: breedText }
+        : z.breed_restriction === 'text_only' && breedText
+          ? { status: 'text_only', text: breedText }
+          : { status: 'unknown' };
+  const maxDogs: DogZone['maxDogs'] =
+    z.max_dogs_kind === 'none'
+      ? { kind: 'none' }
+      : z.max_dogs_kind === 'max' && typeof z.max_dogs === 'number' && z.max_dogs >= 1
+        ? { kind: 'max', count: z.max_dogs }
+        : { kind: 'unknown' };
+  return {
+    breed,
+    maxDogs,
+    floor: oneOf(z.floor_type ?? 'unknown', ['non_slip', 'slippery', 'mixed', 'unknown'] as const, 'unknown'),
+    dogMenu: tri(z.dog_menu ?? 'unknown'),
+    dogSeats: typeof z.dog_seats === 'number' && z.dog_seats >= 0 ? z.dog_seats : null,
   };
 }
 
@@ -132,7 +169,7 @@ export function mapPlace(row: PlaceRow): Place {
   return {
     id: row.id,
     name: row.name,
-    category: oneOf(row.category, ['cafe', 'restaurant', 'commercial', 'other_rest'] as const, 'other_rest'),
+    category: oneOf(row.category, PLACE_CATEGORIES, 'other_rest'),
     address: row.address,
     areaId: row.area_id,
     lat: row.lat,
@@ -207,7 +244,16 @@ export function mapReview(r: ReviewRow, mine: boolean): Review {
     visitedOn: r.visited_on,
     publishedAt: r.published_at,
     mine,
+    ...mapDogInfo(r),
     // 状態が取れない（未ログインの公開一覧）なら公開中のものだけが返っている
     status: r.status ? oneOf<UgcStatus>(r.status, UGC_STATUSES, 'pending') : 'approved',
+  };
+}
+
+/** 口コミ・写真の「一緒の犬」の情報。列がない・壊れた値は null */
+export function mapDogInfo(r: { dog_size?: string | null; dog_breed?: string | null }): { dogSize: DogSize | null; dogBreed: string | null } {
+  return {
+    dogSize: r.dog_size === 'small' || r.dog_size === 'medium' || r.dog_size === 'large' ? r.dog_size : null,
+    dogBreed: typeof r.dog_breed === 'string' && r.dog_breed.trim() ? r.dog_breed.trim().slice(0, 30) : null,
   };
 }

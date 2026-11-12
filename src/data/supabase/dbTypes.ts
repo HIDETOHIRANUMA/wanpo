@@ -61,6 +61,14 @@ export interface ZoneRow {
   certificate: 'not_required' | 'required' | 'unknown';
   certificate_text: string | null;
   extra_requirements: unknown;
+  // 2026-11-14 追加（未適用のDBでは列がないため任意）
+  breed_restriction?: 'none' | 'brachycephalic_ng' | 'text_only' | 'unknown' | null;
+  breed_text?: string | null;
+  max_dogs_kind?: 'none' | 'max' | 'unknown' | null;
+  max_dogs?: number | null;
+  floor_type?: 'non_slip' | 'slippery' | 'mixed' | 'unknown' | null;
+  dog_menu?: TriDb | null;
+  dog_seats?: number | null;
 }
 
 export interface HourRow {
@@ -126,6 +134,8 @@ export interface ReviewRow {
   visited_on: string | null;
   published_at: string | null;
   status?: 'pending' | 'approved' | 'rejected' | 'hidden';
+  dog_size?: 'small' | 'medium' | 'large' | null;
+  dog_breed?: string | null;
 }
 
 export interface PhotoRow {
@@ -135,4 +145,13 @@ export interface PhotoRow {
   caption: string | null;
   published_at: string | null;
   status?: 'pending' | 'approved' | 'rejected' | 'hidden';
+  dog_size?: 'small' | 'medium' | 'large' | null;
+  dog_breed?: string | null;
+}
+
+export interface WbgtPointRow {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
 }

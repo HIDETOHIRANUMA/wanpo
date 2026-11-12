@@ -6,6 +6,7 @@
 - 体験の流れ：検索 → 写真・雰囲気・口コミ・犬の条件・確認日を見る → 電話／公式サイト／予約ページで確認 → 外部地図で向かう → 保存
 - 対象エリア：**全国**（都道府県 → 市区町村、または駅名で基準点を選ぶ。エリア・駅は `npm run import:geo` で投入）。デモは東京3区・大阪・福岡・札幌の架空施設
 - 利用者の投稿：**口コミ**と**犬の写真**（すぐ公開・通報3件で自動非表示・設定で事前確認制に切替可）。投稿は施設の判定（室内同伴・冷房・犬の条件）を変えません
+- 「うちの子」と暑さが軸：**暑さ指数（環境省 WBGT 予測）**、**いますぐ涼みたい**（徒歩で行ける開いている1件）、**お散歩プラン**（涼める場所をつなぐ）、**涼しさの地図**（徒歩10分圏）、**詳細の1日のタイムライン**、**犬種（短頭種）・頭数の照合**、**うちの子に近い順の口コミ・写真ギャラリー**、**うちの子カード**（端末内のみ）
 - ログイン不要：検索・詳細・口コミと写真の閲覧・保存・犬の条件。**報告・回答・口コミ・写真の投稿・通報** はメールOTP認証
 
 > 実装済み／未検証／実データが必要な項目の一覧は [docs/status.md](docs/status.md) にあります。
@@ -112,7 +113,7 @@ Web プレビュー（`npx expo start --web`）では地図を表示せず説明
    npx supabase link --project-ref <プロジェクトref>
    npx supabase db push                       # supabase/migrations を適用
    ```
-   CLI を使わない場合は、Studio の **SQL Editor** で `supabase/migrations/` の SQL を**ファイル名の順に**実行（`20261111000000_init.sql` → `20261112000000_ugc_media_nationwide.sql`）。2つ目は口コミ・写真・店舗写真・予約URL・全国検索の列と、Storage の非公開バケット `user-photos` とその権限を作ります。
+   CLI を使わない場合は、Studio の **SQL Editor** で `supabase/migrations/` の SQL を**ファイル名の順に**実行（`20261111000000_init.sql` → `20261112000000_ugc_media_nationwide.sql` → `20261113000000_ugc_blocks.sql` → `20261114000000_dog_first.sql`）。2つ目は口コミ・写真・店舗写真・予約URL・全国検索の列と、Storage の非公開バケット `user-photos` とその権限を作ります。
 3. エリア・駅を投入：SQL Editor で `supabase/seed/areas_stations.sql` を実行し、全国分は `npm run import:geo`（[docs/operations.md](docs/operations.md) の「7」）。座標は概略値。公開前に確認。
 4. API キー：Dashboard → **Project Settings → API Keys** で publishable key を確認し `.env` に設定。
 5. アカウント削除関数をデプロイ：
@@ -120,7 +121,8 @@ Web プレビュー（`npx expo start --web`）では地図を表示せず説明
    npx supabase functions deploy delete-account
    ```
    `supabase/config.toml` で `verify_jwt = false` とし、関数内で `auth.getUser(token)` により本人を検証します。関数は Supabase が自動で渡す `SUPABASE_URL` と `SUPABASE_SECRET_KEY`（なければ `SUPABASE_SERVICE_ROLE_KEY`）を使います。
-6. `.env` を `EXPO_PUBLIC_DATA_MODE=production` にして起動。施設が0件なら「0件」と表示されます（正しい挙動）。
+6. 暑さ指数（任意・環境省の利用条件を確認してから）：地点一覧を `npm run import:wbgt -- --master <地点一覧CSV> --sql out/wbgt-points.sql` で SQL にして実行 → `npx supabase functions deploy heat-index --no-verify-jwt` → `npx supabase secrets set WBGT_BASE_URL=<予測CSVの置き場所>`。アプリは位置を送らず、端末で最寄り地点を選んで地点番号だけを送ります。未設定の間は「準備中」と表示します。
+7. `.env` を `EXPO_PUBLIC_DATA_MODE=production` にして起動。施設が0件なら「0件」と表示されます（正しい挙動）。
 
 ### メールOTPの設定
 
@@ -187,6 +189,7 @@ DATABASE_URL='postgresql://...' npm run import:places -- data/places.json --db
 - 書式：`templates/places.template.json`（推奨）または `templates/places.template.csv`。
 - 検証内容：必須値、enum、日本国内の座標、https の URL（公式サイト・予約ページ）、電話番号形式、時間帯（`11:00-14:00`、翌日は `18:00-26:00`）、テラス区画の矛盾、確認記録の根拠（URL か短い説明）、店舗写真の権利・出典、雰囲気タグの数、未登録エリア、デモ名の公開禁止。
 - 全国のエリア（市区町村）・駅：`npm run import:geo -- --areas ... --stations ...`（書式は `templates/areas.template.csv` / `templates/stations.template.csv`）。
+- 犬の詳細（任意）：`zone.breed_restriction`（none / brachycephalic_ng / text_only）・`breed_text`、`max_dogs_kind`（none / max）・`max_dogs`、`floor_type`（non_slip / slippery / mixed）、`dog_menu`（yes / no）、`dog_seats`。
 - 未入力は `unknown` のまま取り込みます（「制限なし」「可」にしません）。`publication_status` の既定は `draft`。
 - 確認記録は履歴として追加のみ（同じ記録は重複しません）。
 

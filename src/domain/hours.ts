@@ -138,3 +138,57 @@ export function isValidPeriod(p: Period): boolean {
     p.closeMin <= p.openMin + 1440
   );
 }
+
+export interface DaySegment {
+  startMin: number; // 0..1440
+  endMin: number; // 0..1440
+}
+
+/**
+ * その日（JST）の0〜24時の中で開いている時間帯。前日から日をまたぐ分も含める。
+ * 不明なら null。
+ */
+export function daySegments(schedule: Schedule, at: Date): DaySegment[] | null {
+  const now = toJst(at);
+  const today = periodsForDate(schedule, now.date, now.weekday);
+  const yWeekday = ((now.weekday + 6) % 7) as Weekday;
+  const yesterday = periodsForDate(schedule, previousDate(now.date), yWeekday);
+  if (today === null) return null;
+  const segs: DaySegment[] = [];
+  for (const p of yesterday ?? []) if (p.closeMin > 1440) segs.push({ startMin: 0, endMin: Math.min(1440, p.closeMin - 1440) });
+  for (const p of today) segs.push({ startMin: p.openMin, endMin: Math.min(1440, p.closeMin) });
+  return mergeSegments(segs);
+}
+
+export function mergeSegments(segs: DaySegment[]): DaySegment[] {
+  const s = segs.filter((x) => x.endMin > x.startMin).sort((a, b) => a.startMin - b.startMin);
+  const out: DaySegment[] = [];
+  for (const x of s) {
+    const last = out[out.length - 1];
+    if (last && x.startMin <= last.endMin) last.endMin = Math.max(last.endMin, x.endMin);
+    else out.push({ ...x });
+  }
+  return out;
+}
+
+/** 2つの時間帯の重なり */
+export function intersectSegments(a: DaySegment[], b: DaySegment[]): DaySegment[] {
+  const out: DaySegment[] = [];
+  for (const x of a)
+    for (const y of b) {
+      const s = Math.max(x.startMin, y.startMin);
+      const e = Math.min(x.endMin, y.endMin);
+      if (e > s) out.push({ startMin: s, endMin: e });
+    }
+  return mergeSegments(out);
+}
+
+/** 営業時間と犬同伴可能時間の重なり（＝犬と過ごせる時間）。不明なら null */
+export function dogDaySegments(input: { businessHours: Schedule; dogHours: DogHours }, at: Date): DaySegment[] | null {
+  const biz = daySegments(input.businessHours, at);
+  if (biz === null) return null;
+  if (input.dogHours.mode === 'same_as_business') return biz;
+  if (input.dogHours.mode === 'unknown') return null;
+  const dog = daySegments(input.dogHours.schedule, at);
+  return dog === null ? null : intersectSegments(biz, dog);
+}

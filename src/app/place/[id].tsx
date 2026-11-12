@@ -17,7 +17,9 @@ import { MediaGallery, PlaceHero } from '@/ui/PlaceVisual';
 import { UgcSection } from '@/ui/UgcSection';
 import { errorMessage } from '@/ui/errors';
 import { availabilityBadge, baseBadge, fitBadge, freshnessText } from '@/ui/status';
-import { carryText, certificateText, eligibilityText, feeText, orderText, reservationText, waterText, weightText, zoneSummary } from '@/ui/summaries';
+import { breedText, carryText, certificateText, dogMenuText, dogSeatsText, eligibilityText, feeText, floorText, maxDogsText, orderText, reservationText, waterText, weightText, zoneSummary } from '@/ui/summaries';
+import { DayTimeline } from '@/ui/DayTimeline';
+import { useHeat } from '@/ui/useHeat';
 import { colors, radius, shadow, space, type } from '@/ui/theme';
 
 type Source =
@@ -132,6 +134,7 @@ function Detail({
   const availability = availabilityAt(place, now);
   const z = place.zone;
   const u = place.usage;
+  const heat = useHeat(place);
 
   // 外部連絡・経路：デモ、掲載確認不可のときは無効
   const platform = Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web';
@@ -212,6 +215,13 @@ function Detail({
             <Badge info={freshnessText(freshness)} />
           </View>
 
+          {/* 今日のタイムライン（営業・犬と過ごせる時間・暑さ指数） */}
+          <Section title="今日のタイムライン" icon="today-outline" subtitle="何時に行けば入れて、暑い時間をここで過ごせるか">
+            <Card>
+              <DayTimeline place={place} now={now} forecast={heat.status === 'ok' ? heat.forecast : null} />
+            </Card>
+          </Section>
+
           {place.media.length > 1 ? (
             <Section title="お店の写真" icon="images-outline">
               <MediaGallery media={place.media} />
@@ -248,6 +258,7 @@ function Detail({
               ))}
               <Text style={type.caption}>登録内容と掲載情報の照合結果です。当日の入店・冷房の稼働・空席を保証するものではありません。</Text>
               {!profile ? <Button label="犬の条件を登録する" icon="paw-outline" variant="secondary" onPress={() => router.push('/profile')} /> : null}
+              {profile ? <Button label="入店時に「うちの子カード」を見せる" icon="id-card-outline" variant="secondary" onPress={() => router.push('/dog-card')} /> : null}
             </Card>
           </Section>
 
@@ -257,6 +268,8 @@ function Detail({
               <KV k="体重制限" icon="scale-outline" v={weightText(z)} />
               <KV k="同伴方法" icon="bag-handle-outline" v={`${carryText(z)}${z.carry.text ? `（${z.carry.text}）` : ''}`} />
               <KV k="証明書" icon="ribbon-outline" v={certificateText(z)} />
+              <KV k="犬種" icon="paw-outline" v={breedText(z)} />
+              <KV k="頭数" icon="people-outline" v={maxDogsText(z)} />
               {z.extraRequirements.map((x, i) => (
                 <KV key={i} k={x.effect === 'needs_check' ? '追加条件（要確認）' : '注意事項'} icon="alert-circle-outline" v={x.text} />
               ))}
@@ -271,6 +284,16 @@ function Detail({
               <KV k="料金" icon="pricetag-outline" v={feeText(u)} />
               <KV k="利用資格" icon="person-outline" v={eligibilityText(u)} />
               <KV k="犬用の水" icon="water-outline" v={waterText(u)} />
+            </Card>
+          </Section>
+
+          {/* 犬連れの過ごしやすさ */}
+          <Section title="犬連れの過ごしやすさ" icon="happy-outline">
+            <Card style={{ paddingVertical: space.sm }}>
+              <KV k="床" icon="footsteps-outline" v={floorText(z)} />
+              <KV k="犬用メニュー" icon="restaurant-outline" v={dogMenuText(z)} />
+              <KV k="犬と座れる席" icon="grid-outline" v={dogSeatsText(z)} />
+              {z.floor === 'slippery' || z.floor === 'mixed' ? <Text style={type.caption}>滑りやすい床はシニア犬や小型犬の足腰に負担がかかります。マットや抱っこで対応しましょう。</Text> : null}
             </Card>
           </Section>
 

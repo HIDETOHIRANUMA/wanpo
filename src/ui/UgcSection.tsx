@@ -7,31 +7,38 @@ import {
   FLAG_REASONS,
   formatPostedDate,
   REVIEW_TAG_LABEL,
+  similarity,
+  sortBySimilarity,
   UGC_STATUS_LABEL,
   type FlagReason,
   type Review,
   type UserPhoto,
 } from '@/domain/ugc';
+import { sizeFromWeight, type DogProfile } from '@/domain/types';
 import { useApp } from '@/state/AppContext';
 import { Button, Card, Chip, Icon, IconButton, Section, Tag } from './components';
+import { dogInfoText } from './DogInfoPicker';
 import { errorMessage } from './errors';
 import { OtpLogin } from './OtpLogin';
 import { colors, radius, space, type } from './theme';
 
-type Target = { kind: 'review'; item: Review } | { kind: 'photo'; item: UserPhoto };
+export type UgcTarget = { kind: 'review'; item: Review } | { kind: 'photo'; item: UserPhoto };
 
 /**
  * 施設詳細の「みんなの口コミ・犬の写真」。
  * 投稿は利用者の感想で、施設の確認情報（室内同伴・冷房・犬の条件）の判定には使わない。
  */
 export function UgcSection({ placeId, canPost }: { placeId: string; canPost: boolean }) {
-  const { backend, isDemo } = useApp();
+  const { backend, isDemo, profile } = useApp();
+  const mineDog = myDog(profile);
+  const hasMyDog = !!(mineDog.size || mineDog.breed);
+  const [order, setOrder] = useState<'similar' | 'new'>('similar');
   const [reviews, setReviews] = useState<Review[] | null>(null);
   const [photos, setPhotos] = useState<UserPhoto[] | null>(null);
   const [error, setError] = useState<RepoError | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [viewer, setViewer] = useState<UserPhoto | null>(null);
-  const [action, setAction] = useState<Target | null>(null);
+  const [action, setAction] = useState<UgcTarget | null>(null);
   const load = useCallback(() => {
     let alive = true;
     Promise.all([backend.ugc.listReviews(placeId), backend.ugc.listPhotos(placeId)])
@@ -52,7 +59,9 @@ export function UgcSection({ placeId, canPost }: { placeId: string; canPost: boo
     load();
   };
 
-  const visibleReviews = showAll ? reviews ?? [] : (reviews ?? []).slice(0, 3);
+  const sortedReviews = hasMyDog && order === 'similar' ? sortBySimilarity(reviews ?? [], mineDog) : reviews ?? [];
+  const visibleReviews = showAll ? sortedReviews : sortedReviews.slice(0, 3);
+  const sortedPhotos = hasMyDog ? sortBySimilarity(photos ?? [], mineDog) : photos ?? [];
 
   return (
     <>
@@ -66,13 +75,13 @@ export function UgcSection({ placeId, canPost }: { placeId: string; canPost: boo
         ) : null}
         {photos && photos.length > 0 ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }}>
-            {photos.map((p) => (
-              <Pressable key={p.id} onPress={() => setViewer(p)} accessibilityRole="imagebutton" accessibilityLabel={`犬の写真${p.caption ? `：${p.caption}` : ''}。タップで拡大`}>
-                <Image source={{ uri: p.url }} style={styles.thumb} resizeMode="cover" />
-                {p.mine && p.status !== 'approved' ? <Text style={styles.statusPill}>{p.status === 'pending' ? '確認待ち' : '非表示'}</Text> : null}
-              </Pressable>
+            {sortedPhotos.slice(0, 8).map((p) => (
+              <PhotoThumb key={p.id} photo={p} size={132} onPress={() => setViewer(p)} similar={hasMyDog && similarity(p, mineDog) > 0} />
             ))}
           </ScrollView>
+        ) : null}
+        {photos && photos.length > 0 ? (
+          <Button label={`犬の写真をすべて見る（${photos.length}枚）`} icon="grid-outline" variant="ghost" onPress={() => router.push({ pathname: '/gallery/[placeId]', params: { placeId } })} />
         ) : null}
         <Button
           label="犬の写真を投稿する"
@@ -96,8 +105,14 @@ export function UgcSection({ placeId, canPost }: { placeId: string; canPost: boo
             <Text style={[type.small, { flex: 1 }]}>まだ口コミはありません。最初の口コミを書いてみませんか。</Text>
           </View>
         ) : null}
+        {hasMyDog && reviews && reviews.length > 1 ? (
+          <View style={{ flexDirection: 'row', gap: space.sm }}>
+            <Chip label="うちの子に近い順" icon="paw-outline" selected={order === 'similar'} onPress={() => setOrder('similar')} />
+            <Chip label="新しい順" selected={order === 'new'} onPress={() => setOrder('new')} />
+          </View>
+        ) : null}
         {visibleReviews.map((r) => (
-          <ReviewItem key={r.id} review={r} onMenu={() => setAction({ kind: 'review', item: r })} />
+          <ReviewItem key={r.id} review={r} similar={hasMyDog ? similarity(r, mineDog) : 0} onMenu={() => setAction({ kind: 'review', item: r })} />
         ))}
         {reviews && reviews.length > 3 && !showAll ? (
           <Button label={`口コミをすべて見る（${reviews.length}件）`} variant="ghost" onPress={() => setShowAll(true)} />
@@ -119,7 +134,7 @@ export function UgcSection({ placeId, canPost }: { placeId: string; canPost: boo
           setAction({ kind: 'photo', item: p });
         }}
       />
-      <ActionSheet
+      <UgcActionSheet
         target={action}
         onClose={() => setAction(null)}
         onDone={() => {
@@ -131,7 +146,40 @@ export function UgcSection({ placeId, canPost }: { placeId: string; canPost: boo
   );
 }
 
-function ReviewItem({ review: r, onMenu }: { review: Review; onMenu: () => void }) {
+/** うちの子の大きさ・犬種（似た投稿を探す基準） */
+export function myDog(profile: DogProfile | null) {
+  return { size: sizeFromWeight(profile?.weightKg ?? null), breed: profile?.breed ?? null };
+}
+
+/** 写真のサムネイル。犬の大きさ・犬種と「うちの子に近い」印を重ねる */
+export function PhotoThumb({ photo: p, size, onPress, similar }: { photo: UserPhoto; size: number; onPress: () => void; similar?: boolean }) {
+  const info = dogInfoText(p.dogSize, p.dogBreed);
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="imagebutton"
+      accessibilityLabel={`犬の写真${info ? `（${info}）` : ''}${p.caption ? `：${p.caption}` : ''}。タップで拡大`}
+      style={({ pressed }) => [pressed && { opacity: 0.85 }]}
+    >
+      <Image source={{ uri: p.url }} style={[styles.thumb, { width: size, height: size }]} resizeMode="cover" />
+      {p.mine && p.status !== 'approved' ? <Text style={styles.statusPill}>{p.status === 'pending' ? '確認待ち' : '非表示'}</Text> : null}
+      {similar ? (
+        <View style={styles.similarPill}>
+          <Icon name="paw" size={10} color={colors.white} />
+          <Text style={styles.similarText}>うちの子に近い</Text>
+        </View>
+      ) : null}
+      {info ? (
+        <Text style={styles.dogPill} numberOfLines={1}>
+          {info}
+        </Text>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function ReviewItem({ review: r, onMenu, similar }: { review: Review; onMenu: () => void; similar: number }) {
+  const info = dogInfoText(r.dogSize, r.dogBreed);
   return (
     <Card style={{ gap: space.sm, padding: space.md }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
@@ -158,6 +206,13 @@ function ReviewItem({ review: r, onMenu }: { review: Review; onMenu: () => void 
         />
       </View>
       {r.mine && r.status !== 'approved' ? <Text style={styles.notice}>{UGC_STATUS_LABEL[r.status]}</Text> : null}
+      {info ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <Icon name="paw-outline" size={14} color={colors.textMuted} />
+          <Text style={type.small}>{info}と来店</Text>
+          {similar >= 2 ? <Tag label="うちの子と同じ犬種" tone="accent" /> : similar === 1 ? <Tag label="うちの子と同じ大きさ" tone="accent" /> : null}
+        </View>
+      ) : null}
       <Text style={type.body}>{r.body}</Text>
       {r.tags.length ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
@@ -170,13 +225,14 @@ function ReviewItem({ review: r, onMenu }: { review: Review; onMenu: () => void 
   );
 }
 
-function PhotoViewer({ photo, onClose, onMenu }: { photo: UserPhoto | null; onClose: () => void; onMenu: (p: UserPhoto) => void }) {
+export function PhotoViewer({ photo, onClose, onMenu }: { photo: UserPhoto | null; onClose: () => void; onMenu: (p: UserPhoto) => void }) {
   return (
     <Modal visible={!!photo} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.viewerBackdrop}>
         {photo ? (
           <View style={{ gap: space.md, width: '100%', maxWidth: 560 }}>
             <Image source={{ uri: photo.url }} style={styles.viewerImg} resizeMode="contain" accessibilityLabel="犬の写真（拡大）" />
+            {dogInfoText(photo.dogSize, photo.dogBreed) ? <Text style={[type.label, { color: '#fff' }]}>{dogInfoText(photo.dogSize, photo.dogBreed)}</Text> : null}
             {photo.caption ? <Text style={[type.body, { color: '#fff' }]}>{photo.caption}</Text> : null}
             <Text style={[type.small, { color: '#E5ECEA' }]}>
               {photo.publishedAt ? `${formatPostedDate(photo.publishedAt)} 投稿` : UGC_STATUS_LABEL[photo.status]}
@@ -193,7 +249,7 @@ function PhotoViewer({ photo, onClose, onMenu }: { photo: UserPhoto | null; onCl
   );
 }
 
-function ActionSheet({ target, onClose, onDone }: { target: Target | null; onClose: () => void; onDone: () => void }) {
+export function UgcActionSheet({ target, onClose, onDone }: { target: UgcTarget | null; onClose: () => void; onDone: () => void }) {
   const { backend, auth } = useApp();
   const [reason, setReason] = useState<FlagReason | null>(null);
   const [busy, setBusy] = useState(false);
@@ -304,6 +360,9 @@ function ActionSheet({ target, onClose, onDone }: { target: Target | null; onClo
 const styles = StyleSheet.create({
   thumb: { width: 132, height: 132, borderRadius: radius.md, backgroundColor: colors.mint },
   statusPill: { position: 'absolute', left: 6, top: 6, backgroundColor: colors.warnBg, color: colors.warn, fontSize: 11, paddingHorizontal: 6, borderRadius: 6, overflow: 'hidden' },
+  dogPill: { position: 'absolute', left: 6, right: 6, bottom: 6, backgroundColor: 'rgba(17,35,31,0.72)', color: colors.white, fontSize: 11, fontWeight: '700', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
+  similarPill: { position: 'absolute', right: 6, top: 6, flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.accent, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999 },
+  similarText: { color: colors.white, fontSize: 10.5, fontWeight: '800' },
   avatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: 15, fontWeight: '800', color: '#8A4A12' },
   emptyBox: { flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.md, borderRadius: radius.md, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.borderStrong },

@@ -4,6 +4,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 import MapView, { Circle, Marker, type Region } from 'react-native-maps';
 import type { LatLng } from '@/domain/geo';
+import { coverageCircles, coverageRatio } from '@/domain/cool';
 import { toMapMarkers, type SearchOrigin, type SearchResult } from '@/domain/search';
 import { Button } from './components';
 import { MapUnavailable } from './MapUnavailable';
@@ -36,6 +37,10 @@ export function SearchMap({ results, origin, radiusKm, onSearchHere }: SearchMap
     [origin.lat, origin.lng],
   );
   const [moved, setMoved] = useState<LatLng | null>(null);
+  // 涼しさの地図：涼める場所ごとの徒歩10分圏を重ねる
+  const [coolLayer, setCoolLayer] = useState(true);
+  const circles = useMemo(() => coverageCircles(results), [results]);
+  const ratio = useMemo(() => coverageRatio(origin, results, radiusKm), [origin, results, radiusKm]);
   const mapRef = useRef<MapView>(null);
 
   if (!availability.ok) return <MapUnavailable reason={availability.reason} />;
@@ -67,6 +72,18 @@ export function SearchMap({ results, origin, radiusKm, onSearchHere }: SearchMap
           strokeColor={colors.primary}
           fillColor="rgba(11,122,112,0.07)"
         />
+        {coolLayer
+          ? circles.map((c) => (
+              <Circle
+                key={`cool-${c.id}`}
+                center={{ latitude: c.lat, longitude: c.lng }}
+                radius={c.radiusKm * 1000}
+                strokeColor="rgba(11,122,112,0.45)"
+                fillColor={c.open ? 'rgba(11,122,112,0.22)' : 'rgba(11,122,112,0.10)'}
+                lineDashPattern={c.open ? undefined : [6, 6]}
+              />
+            ))
+          : null}
         {markers.map((m) => (
           <Marker
             key={m.id}
@@ -91,8 +108,23 @@ export function SearchMap({ results, origin, radiusKm, onSearchHere }: SearchMap
           />
         </View>
       ) : null}
+      <View style={styles.coolToggle}>
+        <Button
+          label={coolLayer ? '涼しさ表示 ON' : '涼しさ表示 OFF'}
+          icon="snow-outline"
+          size="sm"
+          variant={coolLayer ? 'primary' : 'secondary'}
+          onPress={() => setCoolLayer((v) => !v)}
+          accessibilityHint="涼める場所の徒歩10分圏の表示を切り替えます"
+        />
+      </View>
       <View style={styles.legend} pointerEvents="none">
         <Text style={styles.legendText}>灰色のピン：検索の基準点 ／ 緑のピン：施設（{markers.length}件）</Text>
+        {coolLayer ? (
+          <Text style={styles.legendText}>
+            緑の円：涼める場所から徒歩10分圏。円のない場所は近くに涼める場所がありません（範囲内の約{Math.round(ratio * 100)}%をカバー）
+          </Text>
+        ) : null}
       </View>
     </View>
   );
@@ -100,6 +132,7 @@ export function SearchMap({ results, origin, radiusKm, onSearchHere }: SearchMap
 
 const styles = StyleSheet.create({
   searchHere: { position: 'absolute', top: space.md, alignSelf: 'center' },
+  coolToggle: { position: 'absolute', top: space.md, right: space.md },
   legend: {
     position: 'absolute',
     bottom: space.sm,

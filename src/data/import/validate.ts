@@ -7,7 +7,7 @@ import { isValidJapanCoord } from '@/domain/geo';
 import { parseHHMM } from '@/domain/hours';
 
 export const ENUMS = {
-  category: ['cafe', 'restaurant', 'commercial', 'other_rest'],
+  category: ['cafe', 'restaurant', 'commercial', 'other_rest', 'home_center', 'pet_shop', 'public_facility'],
   publication_status: ['draft', 'published', 'archived'],
   operating_status: ['normal', 'temporarily_closed', 'closed', 'unknown'],
   scope: ['indoor_whole', 'indoor_partial', 'private_room', 'terrace', 'other', 'unknown'],
@@ -23,6 +23,9 @@ export const ENUMS = {
   verification_method: ['official_info', 'phone', 'onsite', 'other'],
   schedule: ['business', 'dog'],
   media_kind: ['exterior', 'interior', 'atmosphere', 'dog_area'],
+  breed_restriction: ['none', 'brachycephalic_ng', 'text_only', 'unknown'],
+  max_dogs_kind: ['none', 'max', 'unknown'],
+  floor_type: ['non_slip', 'slippery', 'mixed', 'unknown'],
 } as const;
 
 export const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
@@ -217,6 +220,19 @@ export function validatePlace(raw: Raw, index: number, knownAreas: string[], now
   }
   if (carryStatus === 'confirmed' && methods.length === 0) err('zone.carry_methods', '確認済みの場合は1つ以上必要です');
   const certificate = en(zoneRaw, 'certificate', ENUMS.certificate, 'unknown', zp);
+  // 犬種・頭数・床・犬用メニュー・席（2026-11-14 追加。空欄は「不明」）
+  const breedKind = en(zoneRaw, 'breed_restriction', ENUMS.breed_restriction, 'unknown', zp);
+  const breedText = opt(zoneRaw, 'breed_text', 200, zp);
+  if (breedKind === 'text_only' && !breedText) err('zone.breed_text', '文章条件の原文が必要です');
+  const maxDogsKind = en(zoneRaw, 'max_dogs_kind', ENUMS.max_dogs_kind, 'unknown', zp);
+  let maxDogs: number | null = null;
+  if (maxDogsKind === 'max') {
+    maxDogs = Number(zoneRaw.max_dogs);
+    if (!Number.isInteger(maxDogs) || maxDogs < 1 || maxDogs > 20) err('zone.max_dogs', '1〜20 の整数が必要です');
+  }
+  const seatsRaw = str(zoneRaw.dog_seats);
+  const dogSeats = seatsRaw == null ? null : Number(seatsRaw);
+  if (dogSeats != null && (!Number.isInteger(dogSeats) || dogSeats < 0 || dogSeats > 500)) err('zone.dog_seats', '0〜500 の整数です');
   const extraRaw = Array.isArray(zoneRaw.extra_requirements)
     ? zoneRaw.extra_requirements
     : (str(zoneRaw.extra_requirements)?.split('|') ?? []).map((s) => {
@@ -342,6 +358,13 @@ export function validatePlace(raw: Raw, index: number, knownAreas: string[], now
         carry_text: opt(zoneRaw, 'carry_text', 200, zp),
         certificate,
         certificate_text: opt(zoneRaw, 'certificate_text', 200, zp),
+        breed_restriction: breedKind,
+        breed_text: breedText,
+        max_dogs_kind: maxDogsKind,
+        max_dogs: maxDogsKind === 'max' ? maxDogs : null,
+        floor_type: en(zoneRaw, 'floor_type', ENUMS.floor_type, 'unknown', zp),
+        dog_menu: en(zoneRaw, 'dog_menu', ENUMS.tri, 'unknown', zp),
+        dog_seats: dogSeats,
       },
       extra_requirements,
       hours,

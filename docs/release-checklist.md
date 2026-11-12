@@ -15,6 +15,8 @@
 ## B. Supabase（本番）
 
 - [ ] **手順4のSQL**（`supabase-step4-blocks.sql`）を SQL Editor で実行 … 投稿者のブロック機能。未実行だとブロックがエラーになります
+- [ ] **手順5のSQL**（`supabase-step5-dog-first.sql`）を手順4の後に実行 … 犬種・頭数などの施設情報、投稿した犬のサイズ・犬種、暑さ指数の地点。未実行でもアプリは旧形式で動きますが、これらは表示されません
+- [ ] **暑さ指数**：環境省「熱中症予防情報サイト」の利用条件（アプリでの表示・商用利用）を環境省に確認 → 了承後に ① 地点一覧CSVを `npm run import:wbgt -- --master <CSV> --sql out/wbgt-points.sql` で SQL にして実行 ② `npx supabase functions deploy heat-index --no-verify-jwt` ③ `npx supabase secrets set WBGT_BASE_URL=<予測CSVの置き場所のURL>`。設定するまでアプリは「暑さ指数は準備中」と表示します。提供期間は例年4月下旬〜10月下旬で、期間外は「提供期間外」と表示されます
 - [ ] **Magic Link のメール文面**に確認コード `{{ .Token }}` を追加（Authentication → Emails → Templates）
 - [ ] **独自のSMTP** を設定（Authentication → Emails → SMTP Settings）。Supabase 標準のメール送信は、プロジェクトのメンバー宛てにしか届かず送信数も少ないため、一般の利用者と審査担当者がログインできません
 - [ ] Authentication → Rate Limits でメール送信の上限を確認

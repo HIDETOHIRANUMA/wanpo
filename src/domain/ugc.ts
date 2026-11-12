@@ -3,6 +3,8 @@
  * 投稿は施設の確認記録・判定条件を変えない（判定は運営の確認情報だけで行う）。
  */
 
+import type { DogSize } from './types';
+
 export type UgcStatus = 'pending' | 'approved' | 'rejected' | 'hidden';
 
 export type ReviewTag =
@@ -48,6 +50,9 @@ export interface Review {
   /** 自分の投稿か（自分の投稿だけ状態が分かる） */
   mine: boolean;
   status: UgcStatus;
+  /** 一緒に行った犬の大きさ・犬種（任意） */
+  dogSize: DogSize | null;
+  dogBreed: string | null;
 }
 
 export interface UserPhoto {
@@ -60,6 +65,9 @@ export interface UserPhoto {
   mine: boolean;
   status: UgcStatus;
   storagePath: string;
+  /** 写っている犬の大きさ・犬種（任意） */
+  dogSize: DogSize | null;
+  dogBreed: string | null;
 }
 
 export interface UgcCounts {
@@ -87,6 +95,7 @@ export const UGC_STATUS_LABEL: Record<UgcStatus, string> = {
 export const NICKNAME_MAX = 20;
 export const REVIEW_BODY_MAX = 1000;
 export const PHOTO_CAPTION_MAX = 100;
+export const DOG_BREED_MAX = 30;
 
 export interface ReviewInput {
   requestId: string;
@@ -95,12 +104,16 @@ export interface ReviewInput {
   body: string;
   tags: ReviewTag[];
   visitedOn: string | null;
+  dogSize: DogSize | null;
+  dogBreed: string | null;
 }
 
 export interface PhotoInput {
   requestId: string;
   placeId: string;
   caption: string;
+  dogSize: DogSize | null;
+  dogBreed: string | null;
   /** 縮小・再エンコード済み（位置情報などのメタデータなし）の JPEG */
   image: PreparedImage;
 }
@@ -149,4 +162,28 @@ export function formatPostedDate(iso: string | null): string {
   if (!iso) return '';
   const d = new Date(new Date(iso).getTime() + 9 * 3600_000);
   return `${d.getUTCFullYear()}/${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+}
+
+/** 犬種の表記ゆれを吸収して比べる（全角半角・空白・「犬」の有無） */
+export function normalizeBreed(s: string | null): string {
+  return (s ?? '').normalize('NFKC').replace(/\s+/g, '').replace(/犬$/, '').toLowerCase();
+}
+
+/**
+ * うちの子に似ている度合い（大きい順に並べる）。
+ * 犬種が同じ：2、大きさが同じ：1、情報なし：0。
+ */
+export function similarity(item: { dogSize: DogSize | null; dogBreed: string | null }, mine: { size: DogSize | null; breed: string | null }): number {
+  let score = 0;
+  if (mine.breed && item.dogBreed && normalizeBreed(mine.breed) === normalizeBreed(item.dogBreed)) score += 2;
+  if (mine.size && item.dogSize === mine.size) score += 1;
+  return score;
+}
+
+/** 似ている順（同点は元の順＝新しい順を保つ） */
+export function sortBySimilarity<T extends { dogSize: DogSize | null; dogBreed: string | null }>(items: T[], mine: { size: DogSize | null; breed: string | null }): T[] {
+  return items
+    .map((x, i) => ({ x, i, s: similarity(x, mine) }))
+    .sort((a, b) => b.s - a.s || a.i - b.i)
+    .map((e) => e.x);
 }

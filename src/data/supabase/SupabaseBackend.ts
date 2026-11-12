@@ -2,7 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { AppState, Platform } from 'react-native';
 import { previousDate, toJst } from '@/domain/hours';
-import { boundingBox, type LatLng } from '@/domain/geo';
+import { boundingBox, distanceKm, type LatLng } from '@/domain/geo';
+import type { HeatPoint } from '@/domain/heat';
 import type { Area, Place, Station } from '@/domain/types';
 import type { FlagReason, PhotoInput, Review, ReviewInput, UgcCounts, UgcStatus, UgcSubmitResult, UserPhoto } from '@/domain/ugc';
 import { base64ToArrayBuffer } from '../base64';
@@ -17,10 +18,12 @@ import {
   type ReportInput,
   type ReportResult,
   type ReportService,
+  type HeatResult,
+  type HeatService,
   type UgcService,
 } from '../repository';
-import type { AreaRow, PhotoRow, PlaceRow, ReviewRow, StationRow } from './dbTypes';
-import { mapPlace, mapReview } from './mappers';
+import type { AreaRow, PhotoRow, PlaceRow, ReviewRow, StationRow, WbgtPointRow } from './dbTypes';
+import { mapDogInfo, mapPlace, mapReview } from './mappers';
 
 export const USER_PHOTO_BUCKET = 'user-photos';
 /** 署名URLの有効期限（秒）。期限後は画面の再読み込みで取り直す */
@@ -267,8 +270,26 @@ export class SupabaseReports implements ReportService {
   }
 }
 
-const REVIEW_PUBLIC_COLS = 'id,place_id,nickname,body,tags,visited_on,published_at';
-const PHOTO_PUBLIC_COLS = 'id,place_id,storage_path,caption,published_at';
+const REVIEW_PUBLIC_COLS_V1 = 'id,place_id,nickname,body,tags,visited_on,published_at';
+const PHOTO_PUBLIC_COLS_V1 = 'id,place_id,storage_path,caption,published_at';
+// 犬の大きさ・犬種の列（20261114 のマイグレーションで追加）
+const REVIEW_PUBLIC_COLS = `${REVIEW_PUBLIC_COLS_V1},dog_size,dog_breed`;
+const PHOTO_PUBLIC_COLS = `${PHOTO_PUBLIC_COLS_V1},dog_size,dog_breed`;
+
+/** DB が新しい列・関数をまだ持たない（マイグレーション未適用）ときのエラーか */
+function isMissingSchema(e: unknown): boolean {
+  return e instanceof RepoError && e.kind === 'server' && (e.devDetail === '42703' || e.devDetail === 'PGRST202' || e.devDetail === 'PGRST204');
+}
+
+/** 新しい形で試し、DB が古ければ旧形式でやり直す */
+async function withLegacy<T>(next: () => Promise<T>, legacy: () => Promise<T>): Promise<T> {
+  try {
+    return await next();
+  } catch (e) {
+    if (isMissingSchema(e)) return legacy();
+    throw e;
+  }
+}
 
 export class SupabaseUgc implements UgcService {
   constructor(private client: SupabaseClient) {}
@@ -298,15 +319,17 @@ export class SupabaseUgc implements UgcService {
 
   async listReviews(placeId: string): Promise<Review[]> {
     const signedIn = await this.signedIn();
-    const [rows, mine] = await Promise.all([
+    const query = (cols: string) =>
       this.call<ReviewRow[]>(() =>
         this.client
           .from('place_reviews')
-          .select(signedIn ? `${REVIEW_PUBLIC_COLS},status` : REVIEW_PUBLIC_COLS)
+          .select(signedIn ? `${cols},status` : cols)
           .eq('place_id', placeId)
           .order('published_at', { ascending: false, nullsFirst: true })
           .limit(50) as unknown as PromiseLike<{ data: ReviewRow[] | null; error: unknown }>,
-      ),
+      );
+    const [rows, mine] = await Promise.all([
+      withLegacy(() => query(REVIEW_PUBLIC_COLS), () => query(REVIEW_PUBLIC_COLS_V1)),
       this.myIds(placeId),
     ]);
     return rows.map((r) => mapReview(r, mine.has(r.id)));
@@ -314,15 +337,17 @@ export class SupabaseUgc implements UgcService {
 
   async listPhotos(placeId: string): Promise<UserPhoto[]> {
     const signedIn = await this.signedIn();
-    const [rows, mine] = await Promise.all([
+    const query = (cols: string) =>
       this.call<PhotoRow[]>(() =>
         this.client
           .from('place_photos')
-          .select(signedIn ? `${PHOTO_PUBLIC_COLS},status,uploaded` : PHOTO_PUBLIC_COLS)
+          .select(signedIn ? `${cols},status,uploaded` : cols)
           .eq('place_id', placeId)
           .order('published_at', { ascending: false, nullsFirst: true })
-          .limit(30) as unknown as PromiseLike<{ data: (PhotoRow & { uploaded?: boolean })[] | null; error: unknown }>,
-      ),
+          .limit(60) as unknown as PromiseLike<{ data: (PhotoRow & { uploaded?: boolean })[] | null; error: unknown }>,
+      );
+    const [rows, mine] = await Promise.all([
+      withLegacy(() => query(PHOTO_PUBLIC_COLS), () => query(PHOTO_PUBLIC_COLS_V1)),
       this.myIds(placeId),
     ]);
     const visible = (rows as (PhotoRow & { uploaded?: boolean })[]).filter((r) => r.uploaded !== false);
@@ -346,6 +371,7 @@ export class SupabaseUgc implements UgcService {
         mine: mine.has(r.id),
         status: (r.status ?? 'approved') as UgcStatus,
         storagePath: r.storage_path,
+        ...mapDogInfo(r),
       }));
   }
 
@@ -357,15 +383,17 @@ export class SupabaseUgc implements UgcService {
   }
 
   async submitReview(i: ReviewInput): Promise<UgcSubmitResult> {
-    const id = await this.call<string>(() =>
-      this.client.rpc('submit_place_review', {
-        p_request_id: i.requestId,
-        p_place_id: i.placeId,
-        p_nickname: i.nickname,
-        p_body: i.body,
-        p_tags: i.tags,
-        p_visited_on: i.visitedOn,
-      }),
+    const base = {
+      p_request_id: i.requestId,
+      p_place_id: i.placeId,
+      p_nickname: i.nickname,
+      p_body: i.body,
+      p_tags: i.tags,
+      p_visited_on: i.visitedOn,
+    };
+    const id = await withLegacy(
+      () => this.call<string>(() => this.client.rpc('submit_place_review_v2', { ...base, p_dog_size: i.dogSize, p_dog_breed: i.dogBreed })),
+      () => this.call<string>(() => this.client.rpc('submit_place_review', base)),
     );
     if (typeof id !== 'string') throw new RepoError('server', 'no id');
     // 状態の取得に失敗しても投稿自体は受付済み
@@ -376,8 +404,13 @@ export class SupabaseUgc implements UgcService {
   async submitPhoto(i: PhotoInput): Promise<UgcSubmitResult> {
     if (!i.image.base64) throw new RepoError('validation', 'image');
     // 1) 投稿枠を確保（回数制限・公開施設かの確認はサーバー側）
-    const slot = await this.call<{ photo_id: string; storage_path: string }[]>(() =>
-      this.client.rpc('begin_photo_upload', { p_request_id: i.requestId, p_place_id: i.placeId, p_caption: i.caption }),
+    const base = { p_request_id: i.requestId, p_place_id: i.placeId, p_caption: i.caption };
+    const slot = await withLegacy(
+      () =>
+        this.call<{ photo_id: string; storage_path: string }[]>(() =>
+          this.client.rpc('begin_photo_upload_v2', { ...base, p_dog_size: i.dogSize, p_dog_breed: i.dogBreed }),
+        ),
+      () => this.call<{ photo_id: string; storage_path: string }[]>(() => this.client.rpc('begin_photo_upload', base)),
     );
     const s = slot[0];
     if (!s) throw new RepoError('server', 'no slot');
@@ -425,6 +458,68 @@ export class SupabaseUgc implements UgcService {
   }
 }
 
+/** 観測地点がこれより遠ければ「その地域の暑さ指数はない」とする */
+const MAX_POINT_DISTANCE_KM = 40;
+
+/**
+ * 暑さ指数：観測地点の一覧（公開テーブル）を読み、端末で最寄りを選んでから
+ * 地点番号だけを Edge Function に渡す（利用者の位置はサーバーへ送らない）。
+ */
+export class SupabaseHeat implements HeatService {
+  private points: WbgtPointRow[] | null = null;
+  constructor(private client: SupabaseClient) {}
+
+  private async loadPoints(): Promise<WbgtPointRow[]> {
+    if (this.points) return this.points;
+    const res = await this.client.from('wbgt_points').select('id,name,lat,lng').limit(2000);
+    if (res.error) {
+      const e = toRepoError(res.error);
+      // テーブル未作成（マイグレーション未適用）は「未設定」として扱う
+      if (e.devDetail === '42P01' || e.devDetail === 'PGRST205') return [];
+      throw e;
+    }
+    this.points = (res.data ?? []) as WbgtPointRow[];
+    return this.points;
+  }
+
+  async forecast(at: LatLng): Promise<HeatResult> {
+    const points = await this.loadPoints();
+    if (points.length === 0) return { status: 'unavailable', reason: 'not_configured' };
+    let best: { p: WbgtPointRow; km: number } | null = null;
+    for (const p of points) {
+      const km = distanceKm(at, p);
+      if (!best || km < best.km) best = { p, km };
+    }
+    if (!best || best.km > MAX_POINT_DISTANCE_KM) return { status: 'unavailable', reason: 'no_point' };
+    let data: { status?: string; reason?: string; issued_at?: string | null; hourly?: HeatPoint[] } | null;
+    try {
+      const res = await this.client.functions.invoke('heat-index', { body: { point_id: best.p.id } });
+      if (res.error) throw res.error;
+      data = res.data as typeof data;
+    } catch (e) {
+      throw toRepoError(e);
+    }
+    if (!data || data.status !== 'ok' || !Array.isArray(data.hourly) || data.hourly.length === 0) {
+      return { status: 'unavailable', reason: data?.reason === 'off_season' ? 'off_season' : 'not_configured' };
+    }
+    const hourly = data.hourly
+      .filter((h) => typeof h?.at === 'string' && typeof h?.wbgt === 'number' && h.wbgt >= 0 && h.wbgt <= 45)
+      .sort((a, b) => a.at.localeCompare(b.at));
+    if (hourly.length === 0) return { status: 'unavailable', reason: 'off_season' };
+    return {
+      status: 'ok',
+      forecast: {
+        source: 'env_go_jp',
+        pointId: best.p.id,
+        pointName: best.p.name,
+        pointDistanceKm: best.km,
+        issuedAt: data.issued_at ?? null,
+        hourly,
+      },
+    };
+  }
+}
+
 export function createSupabaseBackend(url: string, key: string): Backend {
   const client = createSupabaseClient(url, key);
   return {
@@ -433,6 +528,7 @@ export function createSupabaseBackend(url: string, key: string): Backend {
     auth: new SupabaseAuth(client),
     reports: new SupabaseReports(client),
     ugc: new SupabaseUgc(client),
+    heat: new SupabaseHeat(client),
   };
 }
 

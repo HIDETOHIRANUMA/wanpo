@@ -6,7 +6,24 @@
 /** 三値。未入力・不明は 'unknown'。 */
 export type Tri = 'yes' | 'no' | 'unknown';
 
-export type PlaceCategory = 'cafe' | 'restaurant' | 'commercial' | 'other_rest';
+/** 飲食店以外（ホームセンター・ペットショップ・公共施設）も「涼める場所」として扱う */
+export type PlaceCategory =
+  | 'cafe'
+  | 'restaurant'
+  | 'commercial'
+  | 'other_rest'
+  | 'home_center'
+  | 'pet_shop'
+  | 'public_facility';
+export const PLACE_CATEGORIES: PlaceCategory[] = [
+  'cafe',
+  'restaurant',
+  'commercial',
+  'home_center',
+  'pet_shop',
+  'public_facility',
+  'other_rest',
+];
 
 export type PublicationStatus = 'draft' | 'published' | 'archived';
 
@@ -47,6 +64,19 @@ export interface ExtraRequirement {
   effect: 'needs_check' | 'info';
 }
 
+/** 犬種の制限。短頭種（フレンチブルドッグ・パグ等）は暑さに弱く、断られることがある */
+export type BreedRestriction =
+  | { status: 'none' } // 犬種の制限なし（確認済み）
+  | { status: 'brachycephalic_ng'; text?: string } // 短頭種は不可
+  | { status: 'text_only'; text: string } // 「大型犬種は不可」など文章のみ
+  | { status: 'unknown' };
+
+/** 1組あたりの同伴頭数 */
+export type MaxDogs = { kind: 'none' } | { kind: 'max'; count: number } | { kind: 'unknown' };
+
+/** 床：滑りやすい床はシニア犬・小型犬の足腰に負担 */
+export type FloorType = 'non_slip' | 'slippery' | 'mixed' | 'unknown';
+
 export type Eligibility =
   | 'open' // 誰でも利用可
   | 'guests_only' // 宿泊者限定
@@ -67,6 +97,12 @@ export interface DogZone {
   carry: CarryPolicy;
   certificate: CertificateRequirement;
   extraRequirements: ExtraRequirement[];
+  breed: BreedRestriction;
+  maxDogs: MaxDogs;
+  floor: FloorType;
+  dogMenu: Tri;
+  /** 犬と座れる席数。null は不明 */
+  dogSeats: number | null;
 }
 
 export interface UsageConditions {
@@ -202,13 +238,58 @@ export interface Station {
   lng: number;
 }
 
-/** 犬プロフィール（1頭）。未入力は null / 空配列 = 不明 */
+/** 犬の大きさ（口コミ・写真で「似た犬」を探すための区分。体重からの目安） */
+export type DogSize = 'small' | 'medium' | 'large';
+export const DOG_SIZES: DogSize[] = ['small', 'medium', 'large'];
+
+/** 体重からの大きさの目安（小型 10kg未満・中型 25kg未満・大型 25kg以上）。不明なら null */
+export function sizeFromWeight(kg: number | null): DogSize | null {
+  if (kg === null || !Number.isFinite(kg) || kg <= 0) return null;
+  return kg < 10 ? 'small' : kg < 25 ? 'medium' : 'large';
+}
+
+export type DogSex = 'male' | 'female';
+
+/** うちの子カード（入店時にお店の人へ見せる情報）。端末内だけに保存 */
+export interface DogCard {
+  sex: DogSex | null;
+  /** 生まれた年月 YYYY-MM */
+  birthMonth: string | null;
+  neutered: Tri;
+  /** 狂犬病予防注射の接種日 YYYY-MM-DD */
+  rabiesVaccinatedOn: string | null;
+  /** 混合ワクチンの接種日 YYYY-MM-DD */
+  comboVaccinatedOn: string | null;
+  /** 性格・苦手なこと（例「人が好き。大きな音が苦手」） */
+  personality: string | null;
+  /** お店の方へのひとこと（例「トイレはマナーパンツ着用」） */
+  noteForStaff: string | null;
+}
+
+export const EMPTY_DOG_CARD: DogCard = {
+  sex: null,
+  birthMonth: null,
+  neutered: 'unknown',
+  rabiesVaccinatedOn: null,
+  comboVaccinatedOn: null,
+  personality: null,
+  noteForStaff: null,
+};
+
+/** 犬プロフィール。未入力は null / 空配列 = 不明 */
 export interface DogProfile {
   name: string | null;
   weightKg: number | null;
   /** 空配列は「不明」。全方法に対応できるとは解釈しない */
   carryMethods: CarryMethod[];
   canBringCertificate: Tri;
+  /** 犬種（自由入力） */
+  breed: string | null;
+  /** 短頭種か（フレンチブルドッグ・パグ・シーズーなど） */
+  brachycephalic: Tri;
+  /** 一緒に連れて行く頭数（1〜5） */
+  dogCount: number;
+  card: DogCard;
 }
 
 export const EMPTY_DOG_PROFILE: DogProfile = {
@@ -216,4 +297,8 @@ export const EMPTY_DOG_PROFILE: DogProfile = {
   weightKg: null,
   carryMethods: [],
   canBringCertificate: 'unknown',
+  breed: null,
+  brachycephalic: 'unknown',
+  dogCount: 1,
+  card: EMPTY_DOG_CARD,
 };

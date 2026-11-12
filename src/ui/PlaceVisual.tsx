@@ -55,9 +55,9 @@ export function StorefrontIllustration({ seed, category, style }: { seed: string
     <View style={[styles.illu, { backgroundColor: pal.sky }, style]}>
       {/* 遠景の丸（太陽・木） */}
       <View style={[styles.sun, { backgroundColor: pal.stripeB, opacity: 0.8 }]} />
-      {category === 'commercial' ? (
+      {category === 'commercial' || category === 'home_center' ? (
         <Mall pal={pal} />
-      ) : category === 'other_rest' ? (
+      ) : category === 'other_rest' || category === 'public_facility' ? (
         <Lounge pal={pal} />
       ) : (
         <Shop pal={pal} variant={variant} restaurant={category === 'restaurant'} />

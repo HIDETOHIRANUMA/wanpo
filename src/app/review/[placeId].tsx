@@ -4,7 +4,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { RepoError } from '@/data/repository';
 import { toJst } from '@/domain/hours';
-import type { Place } from '@/domain/types';
+import { sizeFromWeight, type Place } from '@/domain/types';
+import { DogInfoPicker } from '@/ui/DogInfoPicker';
 import {
   NICKNAME_MAX,
   REVIEW_BODY_MAX,
@@ -24,7 +25,7 @@ import { colors, space, type } from '@/ui/theme';
 export default function ReviewComposeScreen() {
   const params = useLocalSearchParams<{ placeId: string }>();
   const placeId = String(params.placeId);
-  const { backend, reviewDrafts, auth, isDemo, termsAccepted, acceptTerms } = useApp();
+  const { backend, reviewDrafts, auth, isDemo, termsAccepted, acceptTerms, profile } = useApp();
   const [termsChecked, setTermsChecked] = useState(false);
   const [place, setPlace] = useState<Place | null | undefined>(undefined);
   const [loadError, setLoadError] = useState<RepoError | null>(null);
@@ -45,18 +46,25 @@ export default function ReviewComposeScreen() {
       const saved = await reviewDrafts.load(placeId);
       const nickname = await reviewDrafts.lastNickname();
       setDraft(
-        saved ?? {
-          requestId: Crypto.randomUUID(),
-          placeId,
-          nickname,
-          body: '',
-          tags: [],
-          visitedOn: null,
-          updatedAt: new Date().toISOString(),
-        },
+        saved
+          ? { ...saved, dogSize: saved.dogSize ?? null, dogBreed: saved.dogBreed ?? null }
+          : {
+              requestId: Crypto.randomUUID(),
+              placeId,
+              nickname,
+              body: '',
+              tags: [],
+              visitedOn: null,
+              // 登録した犬の条件から初期値を入れる（変更・削除できる）
+              dogSize: sizeFromWeight(profile?.weightKg ?? null),
+              dogBreed: profile?.breed ?? null,
+              updatedAt: new Date().toISOString(),
+            },
       );
       loaded.current = true;
     })();
+    // 初回の読み込みだけ（プロフィール変更で下書きを作り直さない）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [backend, reviewDrafts, placeId]);
 
   useEffect(() => {
@@ -128,6 +136,10 @@ export default function ReviewComposeScreen() {
       <Text style={[type.small, { marginTop: 4 }]}>
         口コミはニックネームで公開されます。メールアドレスは公開されません。犬同伴の可否や冷房の判定は運営の確認情報で行い、口コミでは変わりません。
       </Text>
+
+      <Section title="一緒に行った犬" icon="paw-outline" subtitle="大きさ・犬種（任意）">
+        <DogInfoPicker size={draft.dogSize} breed={draft.dogBreed} onChange={(v) => update(v)} />
+      </Section>
 
       <Section title="ニックネーム" icon="person-outline">
         <TextField

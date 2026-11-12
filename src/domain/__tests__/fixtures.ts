@@ -1,4 +1,4 @@
-import type { DogProfile, DogZone, Place, UsageConditions, Verification, Weekday } from '../types';
+import { EMPTY_DOG_PROFILE, type DogProfile, type DogZone, type Place, type UsageConditions, type Verification, type Weekday } from '../types';
 
 /** テストの基準時刻（固定）：2026-07-15(水) 12:00 JST */
 export const NOW = new Date('2026-07-15T03:00:00Z');
@@ -45,6 +45,11 @@ export function makePlace(o: {
       carry: { status: 'confirmed', allowed: ['leash_floor'] },
       certificate: { status: 'not_required' },
       extraRequirements: [],
+      breed: { status: 'none' },
+      maxDogs: { kind: 'none' },
+      floor: 'non_slip',
+      dogMenu: 'unknown',
+      dogSeats: null,
       ...o.zone,
     },
     usage: {
@@ -66,6 +71,7 @@ export function makePlace(o: {
 }
 
 export const dog = (o: Partial<DogProfile> = {}): DogProfile => ({
+  ...EMPTY_DOG_PROFILE,
   name: 'ポチ',
   weightKg: 5,
   carryMethods: ['leash_floor'],

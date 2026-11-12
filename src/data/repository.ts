@@ -1,4 +1,5 @@
 import type { LatLng } from '@/domain/geo';
+import type { HeatForecast } from '@/domain/heat';
 import type { Area, Place, Station } from '@/domain/types';
 import type {
   FlagReason,
@@ -129,12 +130,23 @@ export interface UgcService {
   unblockAll(): Promise<number>;
 }
 
+/** 暑さ指数。提供期間外（環境省の提供は4月下旬〜10月）や未設定は unavailable */
+export type HeatResult =
+  | { status: 'ok'; forecast: HeatForecast }
+  | { status: 'unavailable'; reason: 'off_season' | 'not_configured' | 'no_point' };
+
+export interface HeatService {
+  /** 位置はサーバーへ送らない：観測地点の一覧を取得し、端末で最寄りを選んでから地点番号で問い合わせる */
+  forecast(at: LatLng, now: Date): Promise<HeatResult>;
+}
+
 export interface Backend {
   mode: DataMode;
   places: PlaceRepository;
   auth: AuthService;
   reports: ReportService;
   ugc: UgcService;
+  heat: HeatService;
 }
 
 export function maskEmail(email: string | null | undefined): string | null {

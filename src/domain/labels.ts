@@ -1,7 +1,10 @@
 import type {
   CarryMethod,
+  DogSex,
+  DogSize,
   Eligibility,
   FeeStatus,
+  FloorType,
   OperatingStatus,
   PlaceCategory,
   Tri,
@@ -15,6 +18,27 @@ export const CATEGORY_LABEL: Record<PlaceCategory, string> = {
   restaurant: '飲食店',
   commercial: '商業施設',
   other_rest: '休憩できる施設',
+  home_center: 'ホームセンター',
+  pet_shop: 'ペットショップ',
+  public_facility: '公共施設',
+};
+
+export const DOG_SIZE_LABEL: Record<DogSize, string> = {
+  small: '小型犬',
+  medium: '中型犬',
+  large: '大型犬',
+};
+
+export const FLOOR_LABEL: Record<FloorType, string> = {
+  non_slip: '滑りにくい床',
+  slippery: '滑りやすい床',
+  mixed: '場所により滑りやすい床',
+  unknown: '床は未確認',
+};
+
+export const DOG_SEX_LABEL: Record<DogSex, string> = {
+  male: 'オス',
+  female: 'メス',
 };
 
 export const CARRY_METHOD_LABEL: Record<CarryMethod, string> = {

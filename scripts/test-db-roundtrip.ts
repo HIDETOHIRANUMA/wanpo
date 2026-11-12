@@ -2,6 +2,7 @@
  * DB ⇄ アプリの往復確認：投入テンプレート → SQL → PostgreSQL → PostgREST 相当の入れ子JSON → mapPlace → 判定
  * scripts/test-db.sh から呼ぶ（DATABASE_URL はローカルの使い捨てDB）。
  */
+import { EMPTY_DOG_PROFILE } from '../src/domain/types';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -53,8 +54,13 @@ async function main() {
   assert.deepEqual(place.zone.weightLimit, { kind: 'max_kg', maxKg: 10, inclusive: true, text: '体重10kg以下' });
   assert.deepEqual(place.zone.carry.status === 'confirmed' && place.zone.carry.allowed, ['cart', 'bag']);
   assert.equal(place.zone.extraRequirements.length, 2);
+  assert.deepEqual(place.zone.breed, { status: 'brachycephalic_ng', text: '短頭種は夏季（6〜9月）同伴不可' });
+  assert.deepEqual(place.zone.maxDogs, { kind: 'max', count: 2 });
+  assert.equal(place.zone.floor, 'non_slip');
+  assert.equal(place.zone.dogMenu, 'yes');
+  assert.equal(place.zone.dogSeats, 8);
   assert.equal(judgeBase(place).status, 'confirmed');
-  const dog = { name: null, weightKg: 10, carryMethods: ['bag' as const], canBringCertificate: 'yes' as const };
+  const dog = { ...EMPTY_DOG_PROFILE, weightKg: 10, carryMethods: ['bag' as const], canBringCertificate: 'yes' as const };
   // 「大型犬の場合はカート必須」が要確認として残る
   assert.equal(judgeDogFit(place, dog).result, 'needs_check');
   assert.equal(judgeDogFit(place, { ...dog, weightKg: 10.5 }).result, 'mismatch');

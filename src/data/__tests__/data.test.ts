@@ -1,3 +1,4 @@
+import { EMPTY_DOG_PROFILE } from '@/domain/types';
 import { readConfig } from '../config';
 import { createDemoBackend, DEMO_EXPIRED_CODE, DEMO_OTP_CODE, DemoRepository } from '../demo/DemoBackend';
 import { RepoError, type PlaceRepository, type ReportInput } from '../repository';
@@ -92,12 +93,12 @@ describe('端末保存', () => {
     const kv = new MemoryKV();
     const place = makePlace({ id: 'p-save' });
     await new SavedPlacesStore(new LocalStore('production', kv)).save(place, NOW);
-    await new DogProfileStore(new LocalStore('production', kv)).save({ name: 'ポチ', weightKg: 4.5, carryMethods: ['bag'], canBringCertificate: 'yes' });
+    await new DogProfileStore(new LocalStore('production', kv)).save({ ...EMPTY_DOG_PROFILE, name: 'ポチ', weightKg: 4.5, carryMethods: ['bag'], canBringCertificate: 'yes' });
     // 再起動を想定：別インスタンスで読み直す
     const saved = await new SavedPlacesStore(new LocalStore('production', kv)).list();
     expect(saved.map((s) => s.placeId)).toEqual(['p-save']);
     expect(saved[0].snapshot.name).toBe('テスト施設');
-    expect(await new DogProfileStore(new LocalStore('production', kv)).load()).toEqual({ name: 'ポチ', weightKg: 4.5, carryMethods: ['bag'], canBringCertificate: 'yes' });
+    expect(await new DogProfileStore(new LocalStore('production', kv)).load()).toEqual({ ...EMPTY_DOG_PROFILE, name: 'ポチ', weightKg: 4.5, carryMethods: ['bag'], canBringCertificate: 'yes' });
   });
 
   test('デモと本番で保存領域を分ける', async () => {
@@ -109,7 +110,7 @@ describe('端末保存', () => {
   test('壊れた・未知のプロフィール値は不明に戻す', async () => {
     const kv = new MemoryKV();
     await kv.setItem('inu-to-suzumeru:demo:dog-profile', JSON.stringify({ weightKg: -3, carryMethods: ['fly', 'cart'], canBringCertificate: 'maybe' }));
-    expect(await new DogProfileStore(new LocalStore('demo', kv)).load()).toEqual({ name: null, weightKg: null, carryMethods: ['cart'], canBringCertificate: 'unknown' });
+    expect(await new DogProfileStore(new LocalStore('demo', kv)).load()).toEqual({ ...EMPTY_DOG_PROFILE, carryMethods: ['cart'] });
   });
 
   const repoWith = (impl: PlaceRepository['getPlacesByIds']): PlaceRepository =>

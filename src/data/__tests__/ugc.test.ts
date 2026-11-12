@@ -19,6 +19,8 @@ const review = (o: Partial<ReviewInput> = {}): ReviewInput => ({
   body: '涼しかったです',
   tags: ['cool_inside'],
   visitedOn: null,
+  dogSize: null,
+  dogBreed: null,
   ...o,
 });
 
@@ -77,9 +79,9 @@ describe('デモの口コミ・写真（端末内のみ）', () => {
   });
   test('写真は端末内の画像として保存（送信しない）', async () => {
     const b = await setup();
-    const r = await b.ugc.submitPhoto({ requestId: 'p1', placeId: 'demo-01', caption: 'ひと休み', image: { uri: 'x', width: 10, height: 10, dataUri: 'data:image/jpeg;base64,AAAA' } });
+    const r = await b.ugc.submitPhoto({ requestId: 'p1', placeId: 'demo-01', caption: 'ひと休み', dogSize: null, dogBreed: null, image: { uri: 'x', width: 10, height: 10, dataUri: 'data:image/jpeg;base64,AAAA' } });
     expect(r.storedAt).toBe('demo_local');
-    const photos = await b.ugc.listPhotos('demo-01');
+    const photos = (await b.ugc.listPhotos('demo-01')).filter((p) => p.mine);
     expect(photos).toHaveLength(1);
     expect(photos[0].url.startsWith('data:image/jpeg')).toBe(true);
   });
@@ -137,9 +139,10 @@ describe('全国の検索範囲', () => {
 
 describe('写真の投稿（本番）', () => {
   const image = { uri: 'file://x.jpg', width: 10, height: 10, base64: 'QUJD' };
-  const make = (uploadResult: unknown) => {
-    const rpc = jest.fn(async (name: string) => {
-      if (name === 'begin_photo_upload') return { data: [{ photo_id: 'ph1', storage_path: 'uid/ph1.jpg' }], error: null };
+  const make = (uploadResult: unknown, legacyDb = false) => {
+    const rpc = jest.fn(async (name: string, _args?: unknown) => {
+      if (name === 'begin_photo_upload_v2' && legacyDb) return { data: null, error: { code: 'PGRST202', message: 'not found' } };
+      if (name === 'begin_photo_upload_v2' || name === 'begin_photo_upload') return { data: [{ photo_id: 'ph1', storage_path: 'uid/ph1.jpg' }], error: null };
       if (name === 'complete_photo_upload') return { data: 'approved', error: null };
       return { data: null, error: null };
     });
@@ -149,20 +152,26 @@ describe('写真の投稿（本番）', () => {
   };
   test('枠の確保 → 本人フォルダへアップロード → 完了 の順', async () => {
     const { ugc, rpc, upload } = make({ data: {}, error: null });
-    const r = await ugc.submitPhoto({ requestId: 'q', placeId: 'p', caption: '', image });
+    const r = await ugc.submitPhoto({ requestId: 'q', placeId: 'p', caption: '', dogSize: null, dogBreed: null, image });
     expect(r).toEqual({ id: 'ph1', status: 'approved', storedAt: 'server' });
     expect(upload).toHaveBeenCalledWith('uid/ph1.jpg', expect.any(ArrayBuffer), { contentType: 'image/jpeg', upsert: false });
-    expect(rpc.mock.calls.map((c) => c[0])).toEqual(['begin_photo_upload', 'complete_photo_upload']);
+    expect(rpc.mock.calls.map((c) => c[0])).toEqual(['begin_photo_upload_v2', 'complete_photo_upload']);
+  });
+  test('犬の大きさ・犬種を送る。DBが古い（関数がない）ときは旧関数でやり直す', async () => {
+    const { ugc, rpc } = make({ data: {}, error: null }, true);
+    await ugc.submitPhoto({ requestId: 'q', placeId: 'p', caption: '', dogSize: 'small', dogBreed: '柴犬', image });
+    expect(rpc.mock.calls[0]).toEqual(['begin_photo_upload_v2', expect.objectContaining({ p_dog_size: 'small', p_dog_breed: '柴犬' })]);
+    expect(rpc.mock.calls.map((c) => c[0])).toEqual(['begin_photo_upload_v2', 'begin_photo_upload', 'complete_photo_upload']);
   });
   test('再送で「既にある」と返ったら成功として完了へ進む', async () => {
     const { ugc, rpc } = make({ data: null, error: { statusCode: '409', message: 'The resource already exists' } });
-    await ugc.submitPhoto({ requestId: 'q', placeId: 'p', caption: '', image });
+    await ugc.submitPhoto({ requestId: 'q', placeId: 'p', caption: '', dogSize: null, dogBreed: null, image });
     expect(rpc.mock.calls.map((c) => c[0])).toContain('complete_photo_upload');
   });
   test('アップロードの通信失敗は投稿済みにしない', async () => {
     const { ugc, rpc, upload } = make(null);
     upload.mockRejectedValueOnce(new TypeError('Network request failed'));
-    await expect(ugc.submitPhoto({ requestId: 'q', placeId: 'p', caption: '', image })).rejects.toMatchObject({ kind: 'network' });
+    await expect(ugc.submitPhoto({ requestId: 'q', placeId: 'p', caption: '', dogSize: null, dogBreed: null, image })).rejects.toMatchObject({ kind: 'network' });
     expect(rpc.mock.calls.map((c) => c[0])).not.toContain('complete_photo_upload');
   });
 });

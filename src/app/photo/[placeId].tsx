@@ -3,7 +3,8 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { RepoError } from '@/data/repository';
-import type { Place } from '@/domain/types';
+import { sizeFromWeight, type DogSize, type Place } from '@/domain/types';
+import { DogInfoPicker } from '@/ui/DogInfoPicker';
 import { PHOTO_CAPTION_MAX, type PreparedImage, type UgcSubmitResult } from '@/domain/ugc';
 import { useApp } from '@/state/AppContext';
 import { Button, Card, DemoBanner, EmptyState, ErrorState, Icon, Loading, Notice, Section, TextField } from '@/ui/components';
@@ -23,11 +24,16 @@ const RULES = [
 export default function PhotoUploadScreen() {
   const params = useLocalSearchParams<{ placeId: string }>();
   const placeId = String(params.placeId);
-  const { backend, auth, isDemo, termsAccepted, acceptTerms } = useApp();
+  const { backend, auth, isDemo, termsAccepted, acceptTerms, profile } = useApp();
   const [place, setPlace] = useState<Place | null | undefined>(undefined);
   const [loadError, setLoadError] = useState<RepoError | null>(null);
   const [image, setImage] = useState<PreparedImage | null>(null);
   const [caption, setCaption] = useState('');
+  // 登録した犬の条件から初期値（変更・削除できる）
+  const [dog, setDog] = useState<{ dogSize: DogSize | null; dogBreed: string | null }>(() => ({
+    dogSize: sizeFromWeight(profile?.weightKg ?? null),
+    dogBreed: profile?.breed ?? null,
+  }));
   const [agreed, setAgreed] = useState(false);
   const [termsChecked, setTermsChecked] = useState(false);
   const [phase, setPhase] = useState<'form' | 'auth' | 'done'>('form');
@@ -70,7 +76,7 @@ export default function PhotoUploadScreen() {
     setBusy('send');
     setMessage(null);
     try {
-      const r = await backend.ugc.submitPhoto({ requestId: requestId.current, placeId, caption: caption.trim(), image });
+      const r = await backend.ugc.submitPhoto({ requestId: requestId.current, placeId, caption: caption.trim(), image, ...dog });
       setResult(r);
       setPhase('done');
     } catch (e) {
@@ -127,6 +133,10 @@ export default function PhotoUploadScreen() {
           </View>
         )}
         <Button label={image ? '別の写真を選ぶ' : '写真を選ぶ'} icon="images-outline" variant="secondary" onPress={pick} loading={busy === 'pick'} />
+      </Section>
+
+      <Section title="写っている犬" icon="paw-outline" subtitle="大きさ・犬種（任意）">
+        <DogInfoPicker size={dog.dogSize} breed={dog.dogBreed} onChange={setDog} />
       </Section>
 
       <Section title="ひとこと（任意）" icon="chatbubble-outline">

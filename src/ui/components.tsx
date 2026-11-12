@@ -462,9 +462,19 @@ export function Notice({ tone = 'warn', title, body, icon }: { tone?: 'warn' | '
   );
 }
 
+export const CATEGORY_ICON: Record<PlaceCategory, IconName> = {
+  cafe: 'cafe-outline',
+  restaurant: 'restaurant-outline',
+  commercial: 'storefront-outline',
+  other_rest: 'leaf-outline',
+  home_center: 'hammer-outline',
+  pet_shop: 'paw-outline',
+  public_facility: 'business-outline',
+};
+
 /** 写真がない場合は施設種別のプレースホルダー（実在の店舗に見える画像は使わない） */
 export function CategoryPlaceholder({ category, compact }: { category: PlaceCategory; compact?: boolean }) {
-  const glyph: Record<PlaceCategory, IconName> = { cafe: 'cafe-outline', restaurant: 'restaurant-outline', commercial: 'storefront-outline', other_rest: 'leaf-outline' };
+  const glyph = CATEGORY_ICON;
   return (
     <View
       style={[styles.placeholder, compact ? { width: 56, height: 56 } : { height: 120 }]}

@@ -38,6 +38,11 @@ const baseZone: DogZone = {
   carry: { status: 'confirmed', allowed: ['leash_floor', 'cart', 'bag', 'held'] },
   certificate: { status: 'not_required' },
   extraRequirements: [],
+  breed: { status: 'none' },
+  maxDogs: { kind: 'max', count: 2 },
+  floor: 'non_slip',
+  dogMenu: 'unknown',
+  dogSeats: null,
 };
 
 const baseUsage: UsageConditions = {
@@ -117,6 +122,27 @@ const DEMO_TAGS: Record<string, string[]> = {
   'demo-24': ['屋台風', 'にぎやか'],
   'demo-25': ['北欧風', '暖炉風'],
   'demo-26': ['地下街', 'ベンチ'],
+  'demo-27': ['広い通路', 'カート貸出'],
+  'demo-28': ['ペット用品', '水あり'],
+  'demo-29': ['無料', '静か'],
+};
+
+/** 犬種・頭数・床・犬用メニュー・席数（デモ）。照合と表示の確認用 */
+const DEMO_DOG_DETAILS: Record<string, Partial<DogZone>> = {
+  'demo-01': { dogMenu: 'yes', dogSeats: 8, maxDogs: { kind: 'max', count: 3 } },
+  'demo-02': { floor: 'mixed', dogSeats: 12 },
+  'demo-03': { breed: { status: 'brachycephalic_ng', text: '夏季（6〜9月）は短頭種の入店不可' }, maxDogs: { kind: 'max', count: 1 } },
+  'demo-04': { floor: 'slippery', dogMenu: 'no' },
+  'demo-07': { dogMenu: 'yes', dogSeats: 20, maxDogs: { kind: 'none' } },
+  'demo-09': { floor: 'slippery', breed: { status: 'unknown' }, maxDogs: { kind: 'unknown' } },
+  'demo-10': { breed: { status: 'text_only', text: '大型の闘犬種は不可' } },
+  'demo-11': { dogSeats: 4, maxDogs: { kind: 'max', count: 1 } },
+  'demo-15': { dogMenu: 'yes', dogSeats: 3 },
+  'demo-17': { maxDogs: { kind: 'none' }, dogSeats: 15 },
+  'demo-21': { dogMenu: 'yes' },
+  'demo-27': { maxDogs: { kind: 'none' }, floor: 'mixed' },
+  'demo-28': { dogMenu: 'yes', maxDogs: { kind: 'none' } },
+  'demo-29': { maxDogs: { kind: 'max', count: 2 }, floor: 'non_slip' },
 };
 
 const AREA_ADDRESS: Record<string, string> = {
@@ -360,6 +386,44 @@ export function createDemoPlaces(now: Date): Place[] {
       verify: { air_conditioning: 30 },
       description: '室内同伴「可」と入力されていますが、確認記録がないため未確認として扱います。',
     },
+    // ---- 飲食店以外の「涼める場所」 ----
+    {
+      id: 'demo-27',
+      name: 'デモ・ホームセンター港南店',
+      category: 'home_center',
+      areaId: 'shinagawa',
+      lat: 35.6268,
+      lng: 139.7445,
+      zone: { name: '売場全体（カート利用）', carry: { status: 'confirmed', allowed: ['cart', 'bag', 'held'], text: '店内はカートまたは抱っこで' } },
+      usage: { orderRequired: 'no', water: 'no' },
+      businessHours: { weekly: everyDay([p(h(9), h(20))]), exceptions: [] },
+      verify: ALL_KEYS(14),
+      description: '買い物ついでに涼める大型店。ペット用カートの貸し出しあり（デモ）。',
+    },
+    {
+      id: 'demo-28',
+      name: 'デモ・ペットショップ わんにゃん広場',
+      category: 'pet_shop',
+      areaId: 'shibuya',
+      lat: 35.6602,
+      lng: 139.7032,
+      usage: { orderRequired: 'no' },
+      verify: ALL_KEYS(6),
+      description: '店内で休憩でき、水も用意されています（デモ）。',
+    },
+    {
+      id: 'demo-29',
+      name: 'デモ・区民センター ペット同伴休憩室',
+      category: 'public_facility',
+      areaId: 'minato',
+      lat: 35.6498,
+      lng: 139.7422,
+      zone: { name: '1階ペット同伴休憩室', carry: { status: 'confirmed', allowed: ['leash_floor', 'cart', 'bag'] } },
+      usage: { orderRequired: 'no', fee: 'free' },
+      businessHours: { weekly: everyDay([p(h(9), h(21))]), exceptions: [] },
+      verify: ALL_KEYS(20),
+      description: '無料で使える公共の休憩室（デモ）。',
+    },
     // ---- 全国展開の確認用（大阪・福岡・札幌） ----
     {
       id: 'demo-21',
@@ -436,7 +500,7 @@ export function createDemoPlaces(now: Date): Place[] {
     timezone: 'Asia/Tokyo',
     publicationStatus: s.publicationStatus ?? 'published',
     operatingStatus: s.operatingStatus ?? 'normal',
-    zone: { ...baseZone, id: `${s.id}-zone`, ...s.zone },
+    zone: { ...baseZone, id: `${s.id}-zone`, ...DEMO_DOG_DETAILS[s.id], ...s.zone },
     usage: { ...baseUsage, ...s.usage },
     businessHours: s.businessHours ?? standard,
     dogHours: s.dogHours ?? { mode: 'same_as_business' },

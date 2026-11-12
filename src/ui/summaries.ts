@@ -1,4 +1,4 @@
-import { CARRY_METHOD_LABEL, ELIGIBILITY_LABEL, FEE_LABEL, ZONE_SCOPE_LABEL } from '@/domain/labels';
+import { CARRY_METHOD_LABEL, ELIGIBILITY_LABEL, FEE_LABEL, FLOOR_LABEL, triLabel, ZONE_SCOPE_LABEL } from '@/domain/labels';
 import type { DogZone, UsageConditions } from '@/domain/types';
 
 export function zoneSummary(z: DogZone): string {
@@ -59,4 +59,34 @@ export function usageSummary(u: UsageConditions): string {
   if (u.eligibility !== 'open') parts.push(ELIGIBILITY_LABEL[u.eligibility]);
   if (u.fee === 'paid') parts.push('料金あり');
   return parts.join(' ・');
+}
+
+export function breedText(z: DogZone): string {
+  const b = z.breed;
+  switch (b.status) {
+    case 'none':
+      return '制限なし（確認済み）';
+    case 'brachycephalic_ng':
+      return `短頭種は不可${b.text ? `（${b.text}）` : ''}`;
+    case 'text_only':
+      return b.text;
+    case 'unknown':
+      return '未確認';
+  }
+}
+
+export function maxDogsText(z: DogZone): string {
+  return z.maxDogs.kind === 'none' ? '制限なし（確認済み）' : z.maxDogs.kind === 'max' ? `1組${z.maxDogs.count}頭まで` : '未確認';
+}
+
+export function floorText(z: DogZone): string {
+  return FLOOR_LABEL[z.floor];
+}
+
+export function dogMenuText(z: DogZone): string {
+  return triLabel(z.dogMenu, 'あり', 'なし');
+}
+
+export function dogSeatsText(z: DogZone): string {
+  return z.dogSeats === null ? '未確認' : `${z.dogSeats}席`;
 }

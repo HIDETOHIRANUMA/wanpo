@@ -35,7 +35,14 @@
           "text": "マナーベルト着用",
           "effect": "info"
         }
-      ]
+      ],
+      "breed_restriction": "brachycephalic_ng",
+      "breed_text": "短頭種は夏季（6〜9月）同伴不可",
+      "max_dogs_kind": "max",
+      "max_dogs": 2,
+      "floor_type": "non_slip",
+      "dog_menu": "yes",
+      "dog_seats": 8
     },
     "eligibility": "open",
     "order_required": "yes",

@@ -44,7 +44,7 @@ export function judgeBase(place: Pick<Place, 'zone' | 'verifications'>): BaseJud
 
 export type FitResult = 'match' | 'mismatch' | 'needs_check';
 
-export type FitAspect = 'profile' | 'weight' | 'carry' | 'certificate' | 'eligibility' | 'extra';
+export type FitAspect = 'profile' | 'weight' | 'carry' | 'certificate' | 'eligibility' | 'breed' | 'dog_count' | 'extra';
 
 export interface FitReason {
   aspect: FitAspect;
@@ -148,6 +148,45 @@ export function judgeCertificate(zone: DogZone, profile: DogProfile | null): Fit
   };
 }
 
+/**
+ * 犬種の制限。多くのお店は犬種で制限しないため、制限の有無が不明でも
+ * 短頭種と登録した犬だけ「要確認」にする（短頭種は暑さに弱く、夏に断られることがある）。
+ * 判定に関係しない場合は null（理由に出さない）。
+ */
+export function judgeBreed(zone: DogZone, profile: DogProfile | null): FitReason | null {
+  const b = zone.breed;
+  const brachy = profile?.brachycephalic ?? 'unknown';
+  switch (b.status) {
+    case 'none':
+      return { aspect: 'breed', result: 'match', message: '犬種の制限なし（確認済み）' };
+    case 'text_only':
+      return { aspect: 'breed', result: 'needs_check', message: `犬種の条件「${b.text}」は自動で判定できないため確認が必要です` };
+    case 'brachycephalic_ng': {
+      const note = b.text ? `（${b.text}）` : '';
+      if (brachy === 'yes') return { aspect: 'breed', result: 'mismatch', message: `短頭種は入店できません${note}` };
+      if (brachy === 'no') return { aspect: 'breed', result: 'match', message: `短頭種は不可${note}ですが、短頭種ではないと登録済みです` };
+      return { aspect: 'breed', result: 'needs_check', message: `短頭種は不可${note}です。短頭種かどうか未登録のため確認が必要です` };
+    }
+    case 'unknown':
+      return brachy === 'yes'
+        ? { aspect: 'breed', result: 'needs_check', message: '短頭種を断るお店があります。このお店の犬種の制限は未確認です' }
+        : null;
+  }
+}
+
+/** 同伴頭数。1頭なら制限があっても判定に影響しないため null */
+export function judgeDogCount(zone: DogZone, profile: DogProfile | null): FitReason | null {
+  const count = profile?.dogCount ?? 1;
+  if (count <= 1) return null;
+  const m = zone.maxDogs;
+  if (m.kind === 'none') return { aspect: 'dog_count', result: 'match', message: `頭数の制限なし（${count}頭で利用できます）` };
+  if (m.kind === 'unknown')
+    return { aspect: 'dog_count', result: 'needs_check', message: `${count}頭で行けるかは未確認です（1組あたりの頭数の制限が不明）` };
+  return count <= m.count
+    ? { aspect: 'dog_count', result: 'match', message: `1組${m.count}頭までのため、${count}頭で利用できます` }
+    : { aspect: 'dog_count', result: 'mismatch', message: `1組${m.count}頭までのため、${count}頭では利用できません` };
+}
+
 export function judgeEligibility(usage: UsageConditions): FitReason {
   switch (usage.eligibility) {
     case 'open':
@@ -195,6 +234,10 @@ export function judgeDogFit(
   reasons.push(judgeCarry(place.zone, profile));
   reasons.push(judgeCertificate(place.zone, profile));
   reasons.push(judgeEligibility(place.usage));
+  const breed = judgeBreed(place.zone, profile);
+  if (breed) reasons.push(breed);
+  const count = judgeDogCount(place.zone, profile);
+  if (count) reasons.push(count);
   for (const extra of place.zone.extraRequirements) {
     if (extra.effect === 'needs_check')
       reasons.push({

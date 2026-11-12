@@ -39,3 +39,11 @@ Docs: https://docs.expo.dev/eas/index.md
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
 - Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
 - Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
+
+## このプロジェクト固有のルール（犬と涼める）
+
+- 作業を始める前に `docs/handoff.md`（引継ぎ資料・残り作業）と `docs/status.md`（実装済み／未検証）を読むこと。
+- 完了前に `npx tsc --noEmit`、`npx eslint src`、`npx jest` を通す。DB を変えたら `supabase/tests/` にテストを足して `npm run test:rls` を通す。
+- 位置情報はボタン操作時だけ・サーバーに送らない／保存しない。秘密鍵をアプリや `EXPO_PUBLIC_*` に入れない。非公開の列（投稿者ID・内部メモ）を公開しない。
+- 未確認の情報を「可」にしない。投稿は施設の判定に使わない。本番エラー時に自動でデモへ切り替えない。
+- UI・ドキュメントは日本語。npm scripts に POSIX の環境変数構文を書かない（利用者の PC は Windows）。

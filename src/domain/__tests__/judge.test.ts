@@ -1,3 +1,4 @@
+import { EMPTY_DOG_PROFILE } from '../types';
 import { judgeBase, judgeDogFit } from '../judge';
 import { dog, makePlace, verified } from './fixtures';
 
@@ -126,7 +127,7 @@ describe('判定できない条件・利用資格・未登録', () => {
     const p = makePlace();
     expect(judgeDogFit(p, null).result).toBe('needs_check');
     expect(
-      judgeDogFit(p, { name: null, weightKg: null, carryMethods: [], canBringCertificate: 'unknown' }).result,
+      judgeDogFit(p, { ...EMPTY_DOG_PROFILE }).result,
     ).toBe('needs_check');
   });
 

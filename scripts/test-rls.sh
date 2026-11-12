@@ -10,5 +10,5 @@ if [ -n "${PGURL:-}" ]; then ADMIN=("${PSQL[@]}" "$PGURL"); else ADMIN=("${PSQL[
 run() { "${ADMIN[@]}" -d "$DB" -f "$1"; }
 run supabase/tests/00_supabase_stub.sql
 for f in supabase/migrations/*.sql; do run "$f"; done
-for t in supabase/tests/rls.test.sql supabase/tests/ugc.test.sql; do run "$t" 2>&1 | sed "s/^psql:[^ ]* NOTICE:  /  /"; done
+for t in supabase/tests/rls.test.sql supabase/tests/ugc.test.sql supabase/tests/dog_first.test.sql; do run "$t" 2>&1 | sed "s/^psql:[^ ]* NOTICE:  /  /"; done
 "${ADMIN[@]}" -d postgres -c "drop database if exists $DB"
