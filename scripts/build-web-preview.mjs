@@ -11,9 +11,17 @@ execSync(`npx expo export --platform web --output-dir ${out} --clear`, {
   stdio: 'inherit',
   env: { ...process.env, WEB_PREVIEW: '1', EXPO_PUBLIC_DATA_MODE: 'demo', CI: '1' },
 });
+// アイコンのフォントなど、JS から参照される静的ファイルを data: URI に埋め込む（1ファイルで動かすため）
+const MIME = { ttf: 'font/ttf', otf: 'font/otf', png: 'image/png', jpg: 'image/jpeg' };
+function inlineAssets(js) {
+  return js.replace(/"(\/assets\/[^"]+\.(ttf|otf|png|jpg))"/g, (_m, path, ext) => {
+    const data = readFileSync(join(out, path)).toString('base64');
+    return `"data:${MIME[ext]};base64,${data}"`;
+  });
+}
 let html = readFileSync(join(out, 'index.html'), 'utf8');
 html = html.replace(/<script src="(\/_expo\/[^"]+)"[^>]*><\/script>/g, (_m, src) => {
-  const js = readFileSync(join(out, src), 'utf8').replace(/<\/script/gi, '<\\/script');
+  const js = inlineAssets(readFileSync(join(out, src), 'utf8')).replace(/<\/script/gi, '<\\/script');
   return `<script>${js}</script>`;
 });
 html = html.replace(/<link rel="icon"[^>]*>/g, '');

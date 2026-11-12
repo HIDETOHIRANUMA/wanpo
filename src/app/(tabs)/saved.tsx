@@ -8,11 +8,12 @@ import { CATEGORY_LABEL } from '@/domain/labels';
 import { formatJstDateTime, keyFreshness } from '@/domain/verification';
 import { useApp } from '@/state/AppContext';
 import type { SavedStatus } from '@/storage/savedPlaces';
-import { Badge, Button, DemoBanner, Loading } from '@/ui/components';
+import { Badge, Button, DemoBanner, EmptyState, IconButton, Loading, Notice, ScreenHeader } from '@/ui/components';
+import { PlaceThumb } from '@/ui/PlaceVisual';
 import { errorMessage } from '@/ui/errors';
 import { baseBadge, freshnessText } from '@/ui/status';
 import { zoneSummary } from '@/ui/summaries';
-import { colors, radius, space, type } from '@/ui/theme';
+import { colors, radius, shadow, space, type } from '@/ui/theme';
 
 export default function SavedScreen() {
   const { backend, savedStore, saved, reloadSaved, toggleSave, isDemo, config } = useApp();
@@ -42,14 +43,11 @@ export default function SavedScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
       {isDemo ? <DemoBanner /> : null}
-      <Text style={[type.title, { margin: space.lg }]} accessibilityRole="header">
-        保存した施設
-      </Text>
+      <ScreenHeader title="保存した施設" subtitle={visible.length ? `${visible.length}件・この端末に保存` : 'ログイン不要・この端末に保存'} />
       {error ? (
-        <View style={styles.offline} accessibilityLiveRegion="polite">
-          <Text style={type.label}>保存時の情報を表示しています（最新ではない可能性があります）</Text>
-          <Text style={type.small}>{errorMessage(error)}</Text>
-          <Button label="再試行" variant="secondary" onPress={refresh} loading={refreshing} style={{ marginTop: space.sm }} />
+        <View style={{ marginHorizontal: space.lg, marginBottom: space.md, gap: space.sm }}>
+          <Notice tone="warn" icon="cloud-offline-outline" title="保存時の情報を表示しています（最新ではない可能性があります）" body={errorMessage(error)} />
+          <Button label="再試行" icon="refresh" variant="secondary" size="sm" onPress={refresh} loading={refreshing} style={{ alignSelf: 'flex-start' }} />
         </View>
       ) : null}
       {statuses === null ? (
@@ -58,11 +56,15 @@ export default function SavedScreen() {
         <FlatList
           data={visible}
           keyExtractor={(s) => s.place.id}
-          contentContainerStyle={{ paddingBottom: space.xl }}
+          contentContainerStyle={{ paddingTop: space.sm, paddingBottom: space.xxl }}
           ListEmptyComponent={
-            <Text style={[type.body, { margin: space.lg }]}>
-              保存した施設はありません。施設のカードや詳細の「保存する」から追加できます（ログイン不要・この端末に保存）。
-            </Text>
+            <EmptyState
+              icon="heart-outline"
+              title="保存した施設はまだありません"
+              body="気になる施設のハートを押すと、ここに集まります。ログイン不要で、この端末に保存されます。"
+            >
+              <Button label="施設を探す" icon="search" onPress={() => router.navigate('/')} />
+            </EmptyState>
           }
           renderItem={({ item }) => (
             <View style={styles.card}>
@@ -70,25 +72,32 @@ export default function SavedScreen() {
                 onPress={() => router.push(`/place/${item.place.id}`)}
                 accessibilityRole="button"
                 accessibilityLabel={`${item.place.name}の詳細を見る`}
-                style={{ gap: space.sm }}
+                style={({ pressed }) => [styles.row, pressed && { opacity: 0.9 }]}
               >
-                <Text style={type.heading}>{item.place.name}</Text>
-                <Text style={type.small}>
-                  {CATEGORY_LABEL[item.place.category]} ・{zoneSummary(item.place.zone)}
-                </Text>
-                {item.kind === 'unavailable' ? (
-                  <Badge info={{ tone: 'bad', label: '現在の掲載情報を確認できません（電話・経路は使えません）' }} />
-                ) : (
-                  <>
-                    <Badge info={baseBadge(judgeBase(item.place))} />
-                    <Badge info={freshnessText(keyFreshness(item.place.verifications, now, config.settings))} />
-                  </>
-                )}
-                <Text style={type.small}>
+                <PlaceThumb place={item.place} size={84} />
+                <View style={{ flex: 1, gap: 6 }}>
+                  <Text style={styles.name} numberOfLines={2}>
+                    {item.place.name}
+                  </Text>
+                  <Text style={type.caption} numberOfLines={1}>
+                    {CATEGORY_LABEL[item.place.category]}・{zoneSummary(item.place.zone)}
+                  </Text>
+                  {item.kind === 'unavailable' ? (
+                    <Badge size="sm" info={{ tone: 'bad', label: '現在の掲載情報を確認できません（電話・経路は使えません）' }} />
+                  ) : (
+                    <View style={{ gap: 4 }}>
+                      <Badge size="sm" info={baseBadge(judgeBase(item.place))} />
+                      <Badge size="sm" info={freshnessText(keyFreshness(item.place.verifications, now, config.settings))} />
+                    </View>
+                  )}
+                </View>
+              </Pressable>
+              <View style={styles.footer}>
+                <Text style={[type.caption, { flex: 1 }]}>
                   {item.kind === 'cached' ? 'キャッシュ・' : ''}情報の取得日時：{formatJstDateTime(item.fetchedAt)}
                 </Text>
-              </Pressable>
-              <Button label="保存を解除" variant="secondary" onPress={() => toggleSave(item.place)} style={{ marginTop: space.md }} />
+                <IconButton icon="heart" color={colors.heart} background={'#FFF1F1'} size={36} label={`${item.place.name}の保存を解除`} onPress={() => toggleSave(item.place)} />
+              </View>
             </View>
           )}
         />
@@ -98,14 +107,17 @@ export default function SavedScreen() {
 }
 
 const styles = StyleSheet.create({
-  offline: { backgroundColor: colors.warnBg, padding: space.md, marginHorizontal: space.lg, marginBottom: space.md, borderRadius: radius.md },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: space.lg,
     marginHorizontal: space.lg,
     marginBottom: space.md,
+    overflow: 'hidden',
+    ...shadow.card,
   },
+  row: { flexDirection: 'row', gap: space.md, padding: space.md },
+  name: { fontSize: 16, lineHeight: 22, fontWeight: '800', color: colors.text },
+  footer: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.md, paddingVertical: space.sm, borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.surfaceAlt },
 });

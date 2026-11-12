@@ -137,6 +137,39 @@ select tests.expect_eq((select count(*) from public.place_reviews), 3, 'anon: �
 reset role;
 
 -- =========================================================
+-- ブロック：ブロックした本人にだけ、その投稿者の口コミ・写真が見えなくなる
+-- =========================================================
+set role anon;
+select set_config('request.jwt.claims', '', false);
+select tests.expect_denied($$select public.block_ugc_author('review', gen_random_uuid())$$, 'anon: ブロックできない（ログイン必須）');
+select tests.expect_denied($$select ugc_rls.blocked_by_me(gen_random_uuid()) from private.ugc_blocks$$, 'anon: ブロックの記録は読めない');
+select id as review_c from public.place_reviews where nickname = 'ぽち' limit 1 \gset
+reset role;
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"d0000000-0000-0000-0000-00000000000d","role":"authenticated"}', false);
+select tests.expect_eq((select count(*) from public.place_reviews where nickname = 'ぽち'), 3, 'D: ブロック前はCの口コミが見える');
+select public.block_ugc_author('review', :'review_c');
+select public.block_ugc_author('review', :'review_c');
+select tests.expect_eq((select count(*) from public.place_reviews where nickname = 'ぽち'), 0, 'D: ブロックしたCの口コミは見えない');
+select tests.expect_denied($$select * from private.ugc_blocks$$, 'D: ブロックの記録は直接読めない');
+select tests.expect_error($$select public.block_ugc_author('review', gen_random_uuid())$$, 'validation:target', 'D: 存在しない投稿ではブロックできない');
+select set_config('request.jwt.claims', '{"sub":"e0000000-0000-0000-0000-00000000000e","role":"authenticated"}', false);
+select tests.expect_eq((select count(*) from public.place_reviews where nickname = 'ぽち'), 3, 'E: 他の人のブロックは影響しない');
+select set_config('request.jwt.claims', '{"sub":"c0000000-0000-0000-0000-00000000000c","role":"authenticated"}', false);
+select tests.expect_error($$select public.block_ugc_author('review', '$$ || :'review_c' || $$')$$, 'validation:self', 'C: 自分はブロックできない');
+reset role;
+set role anon;
+select set_config('request.jwt.claims', '', false);
+select tests.expect_eq((select count(*) from public.place_reviews where nickname = 'ぽち'), 3, 'anon: ブロックは他の人の表示に影響しない');
+reset role;
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"d0000000-0000-0000-0000-00000000000d","role":"authenticated"}', false);
+select tests.expect_eq(public.unblock_all_ugc_authors(), 1, 'D: ブロックをすべて解除（1人）');
+select tests.expect_eq((select count(*) from public.place_reviews where nickname = 'ぽち'), 3, 'D: 解除後はCの口コミが再び見える');
+select public.block_ugc_author('review', :'review_c');
+reset role;
+
+-- =========================================================
 -- 事前確認モード（設定で切替）
 -- =========================================================
 update private.app_settings set value = '"review_first"' where key = 'ugc_publish_mode';
@@ -158,6 +191,7 @@ delete from auth.users where id = 'c0000000-0000-0000-0000-00000000000c';
 select tests.expect_eq((select count(*) from public.place_reviews where body like '口コミ%'), 0, '削除: Cの口コミが削除される');
 select tests.expect_eq((select count(*) from public.place_photos), 0, '削除: Cの写真の記録が削除される');
 select tests.expect_eq((select count(*) from private.ugc_quota where user_id = 'c0000000-0000-0000-0000-00000000000c'), 0, '削除: Cの投稿回数記録が削除される');
+select tests.expect_eq((select count(*) from private.ugc_blocks where blocked_id = 'c0000000-0000-0000-0000-00000000000c'), 0, '削除: Cへのブロック記録が削除される');
 delete from auth.users where id = 'd0000000-0000-0000-0000-00000000000d';
 select tests.expect_eq((select count(*) from private.ugc_flags where reporter_id = 'd0000000-0000-0000-0000-00000000000d'), 0, '削除: Dの通報記録が削除される');
 

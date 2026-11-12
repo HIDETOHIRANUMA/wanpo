@@ -1,7 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { ScrollView, Text, TextInput, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import { RepoError } from '@/data/repository';
 import { toJst } from '@/domain/hours';
 import type { Place } from '@/domain/types';
@@ -15,15 +15,17 @@ import {
 } from '@/domain/ugc';
 import { useApp } from '@/state/AppContext';
 import type { ReviewDraft } from '@/storage/ugcDrafts';
-import { Button, Card, Chip, DemoBanner, ErrorState, Loading, Section } from '@/ui/components';
+import { Button, Chip, DemoBanner, EmptyState, ErrorState, Loading, Notice, Section, TextField } from '@/ui/components';
+import { TermsConsent } from '@/ui/TermsConsent';
 import { errorMessage } from '@/ui/errors';
 import { OtpLogin } from '@/ui/OtpLogin';
-import { colors, MIN_TAP, radius, space, type } from '@/ui/theme';
+import { colors, space, type } from '@/ui/theme';
 
 export default function ReviewComposeScreen() {
   const params = useLocalSearchParams<{ placeId: string }>();
   const placeId = String(params.placeId);
-  const { backend, reviewDrafts, auth, isDemo } = useApp();
+  const { backend, reviewDrafts, auth, isDemo, termsAccepted, acceptTerms } = useApp();
+  const [termsChecked, setTermsChecked] = useState(false);
   const [place, setPlace] = useState<Place | null | undefined>(undefined);
   const [loadError, setLoadError] = useState<RepoError | null>(null);
   const [draft, setDraft] = useState<ReviewDraft | null>(null);
@@ -72,8 +74,10 @@ export default function ReviewComposeScreen() {
     setDraft({ ...draft, ...patch });
   };
 
+  const termsOk = termsAccepted || termsChecked;
   const submit = async () => {
-    if (errors.length) return;
+    if (errors.length || !termsOk) return;
+    if (!termsAccepted) await acceptTerms();
     if (!auth.signedIn) {
       setPhase('auth');
       return;
@@ -99,19 +103,19 @@ export default function ReviewComposeScreen() {
       <View style={{ flex: 1, backgroundColor: colors.bg, padding: space.lg, gap: space.md }}>
         <Stack.Screen options={{ title: '口コミを書く' }} />
         {isDemo ? <DemoBanner /> : null}
-        <Card style={{ gap: space.sm }}>
-          <Text style={type.heading}>
-            {result.storedAt === 'demo_local' ? 'この端末にデモとして保存しました' : result.status === 'approved' ? '口コミを公開しました' : '口コミを受け付けました'}
-          </Text>
-          <Text style={type.body}>
-            {result.storedAt === 'demo_local'
+        <EmptyState
+          icon="checkmark-circle"
+          title={result.storedAt === 'demo_local' ? 'この端末にデモとして保存しました' : result.status === 'approved' ? '口コミを公開しました' : '口コミを受け付けました'}
+          body={
+            result.storedAt === 'demo_local'
               ? 'デモのため送信はしていません。この端末の施設ページにだけ表示されます。'
               : result.status === 'approved'
                 ? '施設ページに表示されます。不適切な内容は通報により非表示になることがあります。自分の口コミはいつでも削除できます。'
-                : '運営の確認後に公開されます。'}
-          </Text>
-        </Card>
-        <Button label="施設の詳細に戻る" onPress={() => router.back()} />
+                : '運営の確認後に公開されます。'
+          }
+        >
+          <Button label="施設の詳細に戻る" icon="arrow-back" onPress={() => router.back()} />
+        </EmptyState>
       </View>
     );
   }
@@ -120,25 +124,23 @@ export default function ReviewComposeScreen() {
     <ScrollView style={{ backgroundColor: colors.bg }} contentContainerStyle={{ padding: space.lg, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
       <Stack.Screen options={{ title: '口コミを書く' }} />
       {isDemo ? <DemoBanner /> : null}
-      <Text style={type.heading}>{place.name}</Text>
-      <Text style={type.small}>
+      <Text style={type.title}>{place.name}</Text>
+      <Text style={[type.small, { marginTop: 4 }]}>
         口コミはニックネームで公開されます。メールアドレスは公開されません。犬同伴の可否や冷房の判定は運営の確認情報で行い、口コミでは変わりません。
       </Text>
 
-      <Section title="ニックネーム">
-        <TextInput
+      <Section title="ニックネーム" icon="person-outline">
+        <TextField
           value={draft.nickname}
           onChangeText={(t) => update({ nickname: t })}
           maxLength={NICKNAME_MAX}
           placeholder="例：むぎママ"
-          placeholderTextColor={colors.textMuted}
-          style={inputStyle}
           accessibilityLabel="ニックネーム"
+          helper={`本名やSNSのIDは避けてください（${NICKNAME_MAX}文字まで）`}
         />
-        <Text style={type.small}>本名やSNSのIDは避けてください（{NICKNAME_MAX}文字まで）</Text>
       </Section>
 
-      <Section title="よかった点・気になった点（複数選択可）">
+      <Section title="よかった点・気になった点" icon="pricetags-outline" subtitle="複数選択できます">
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
           {REVIEW_TAGS.map((t) => (
             <Chip
@@ -151,38 +153,34 @@ export default function ReviewComposeScreen() {
         </View>
       </Section>
 
-      <Section title="口コミ">
-        <TextInput
+      <Section title="口コミ" icon="create-outline">
+        <TextField
           value={draft.body}
           onChangeText={(t) => update({ body: t })}
           multiline
           maxLength={REVIEW_BODY_MAX}
           placeholder="例：お昼すぎでも店内が涼しく、犬用の水も出してもらえました"
-          placeholderTextColor={colors.textMuted}
-          style={[inputStyle, { minHeight: 140, textAlignVertical: 'top', paddingTop: space.sm }]}
           accessibilityLabel="口コミ本文"
+          helper={`${draft.body.length}/${REVIEW_BODY_MAX}文字。店員さんや他のお客さんの名前・写真、電話番号などの個人情報は書かないでください。`}
         />
-        <Text style={type.small}>
-          {draft.body.length}/{REVIEW_BODY_MAX}文字。店員さんや他のお客さんの名前・写真、電話番号などの個人情報は書かないでください。
-        </Text>
       </Section>
 
-      <Section title="訪問日（任意）">
-        <TextInput
+      <Section title="訪問日（任意）" icon="calendar-outline">
+        <TextField
           value={draft.visitedOn ?? ''}
           onChangeText={(t) => update({ visitedOn: t.trim() === '' ? null : t.trim().replace(/\//g, '-') })}
           placeholder={`例：${today}`}
-          placeholderTextColor={colors.textMuted}
-          style={inputStyle}
           accessibilityLabel="訪問日（年-月-日）。任意"
+          error={errors.includes('visitedOn') ? `訪問日は「${today}」の形式で、2年以内の今日以前の日付を入力してください` : null}
         />
-        {errors.includes('visitedOn') ? (
-          <Text style={{ color: colors.bad }}>訪問日は「{today}」の形式で、2年以内の今日以前の日付を入力してください</Text>
-        ) : null}
+      </Section>
+
+      <Section title="利用規約" icon="document-text-outline">
+        <TermsConsent value={termsChecked} onChange={setTermsChecked} alreadyAccepted={termsAccepted} />
       </Section>
 
       {phase === 'auth' && !auth.signedIn ? (
-        <Section title="メールで確認">
+        <Section title="メールで確認" icon="mail-outline">
           <Text style={type.small}>入力内容はこの端末に保持しています。確認が終わると投稿できます。</Text>
           <OtpLogin onSignedIn={() => setPhase('form')} />
         </Section>
@@ -190,34 +188,23 @@ export default function ReviewComposeScreen() {
 
       <Button
         label={auth.signedIn ? (isDemo ? 'デモとして端末に保存' : '投稿する') : 'メールで確認して投稿'}
+        icon="send-outline"
+        size="lg"
         onPress={submit}
         loading={sending}
-        disabled={errors.length > 0}
-        disabledReason={errors.length > 0 ? 'ニックネームと口コミを入力してください' : undefined}
+        disabled={errors.length > 0 || !termsOk}
+        disabledReason={errors.length > 0 ? 'ニックネームと口コミを入力してください' : !termsOk ? '利用規約・投稿ガイドラインへの同意が必要です' : undefined}
         style={{ marginTop: space.xl }}
       />
-      <Text style={[type.small, { marginTop: space.sm }]}>
+      <Text style={[type.caption, { marginTop: space.sm }]}>
         投稿は1日5件までです。投稿の扱いは「プライバシーポリシー」に記載しています。
       </Text>
       {sendError ? (
         <View style={{ marginTop: space.md, gap: space.sm }}>
-          <Text style={{ color: colors.bad }} accessibilityLiveRegion="assertive">
-            {sendError}
-          </Text>
-          {auth.signedIn ? <Button label="再試行" variant="secondary" onPress={submit} loading={sending} /> : null}
+          <Notice tone="bad" title={sendError} />
+          {auth.signedIn ? <Button label="再試行" icon="refresh" variant="secondary" onPress={submit} loading={sending} /> : null}
         </View>
       ) : null}
     </ScrollView>
   );
 }
-
-const inputStyle = {
-  minHeight: MIN_TAP,
-  borderWidth: 1,
-  borderColor: colors.border,
-  borderRadius: radius.md,
-  paddingHorizontal: space.md,
-  fontSize: 16,
-  color: colors.text,
-  backgroundColor: colors.surface,
-};

@@ -123,6 +123,10 @@ export interface UgcService {
   deleteReview(id: string): Promise<void>;
   deletePhoto(photo: UserPhoto): Promise<void>;
   flag(target: 'review' | 'photo', id: string, reason: FlagReason): Promise<void>;
+  /** 投稿者をブロック（その人の口コミ・写真を自分には表示しない）。投稿者の情報は相手にも自分にも見せない */
+  blockAuthor(target: 'review' | 'photo', id: string): Promise<void>;
+  /** 自分がしたブロックをすべて解除し、解除した人数を返す */
+  unblockAll(): Promise<number>;
 }
 
 export interface Backend {

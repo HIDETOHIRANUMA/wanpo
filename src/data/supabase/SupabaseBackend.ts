@@ -414,6 +414,15 @@ export class SupabaseUgc implements UgcService {
   async flag(target: 'review' | 'photo', id: string, reason: FlagReason): Promise<void> {
     await this.call<unknown>(() => this.client.rpc('flag_ugc', { p_target_type: target, p_target_id: id, p_reason: reason }));
   }
+
+  async blockAuthor(target: 'review' | 'photo', id: string): Promise<void> {
+    await this.call<unknown>(() => this.client.rpc('block_ugc_author', { p_target_type: target, p_target_id: id }));
+  }
+
+  async unblockAll(): Promise<number> {
+    const n = await this.call<number>(() => this.client.rpc('unblock_all_ugc_authors'));
+    return typeof n === 'number' ? n : 0;
+  }
 }
 
 export function createSupabaseBackend(url: string, key: string): Backend {

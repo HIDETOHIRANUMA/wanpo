@@ -14,15 +14,32 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     name: '犬と涼める',
     slug: 'inu-to-suzumeru',
     scheme: 'inutosuzumeru',
-    version: '0.1.0',
+    version: '1.0.0',
     orientation: 'portrait',
     icon: './assets/icon.png',
     userInterfaceStyle: 'light',
-    backgroundColor: '#F7FAF8',
+    backgroundColor: '#F3F6F5',
     ios: {
       supportsTablet: false,
       bundleIdentifier: iosBundleId,
       infoPlist: { ITSAppUsesNonExemptEncryption: false },
+      // Apple のプライバシーマニフェスト：トラッキングなし。使う「理由が必要なAPI」は端末内保存（UserDefaults）など
+      privacyManifests: {
+        NSPrivacyTracking: false,
+        NSPrivacyTrackingDomains: [],
+        NSPrivacyCollectedDataTypes: [
+          { NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypeEmailAddress', NSPrivacyCollectedDataTypeLinked: true, NSPrivacyCollectedDataTypeTracking: false, NSPrivacyCollectedDataTypePurposes: ['NSPrivacyCollectedDataTypePurposeAppFunctionality'] },
+          { NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypePhotosorVideos', NSPrivacyCollectedDataTypeLinked: true, NSPrivacyCollectedDataTypeTracking: false, NSPrivacyCollectedDataTypePurposes: ['NSPrivacyCollectedDataTypePurposeAppFunctionality'] },
+          { NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypeOtherUserContent', NSPrivacyCollectedDataTypeLinked: true, NSPrivacyCollectedDataTypeTracking: false, NSPrivacyCollectedDataTypePurposes: ['NSPrivacyCollectedDataTypePurposeAppFunctionality'] },
+          { NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypeUserID', NSPrivacyCollectedDataTypeLinked: true, NSPrivacyCollectedDataTypeTracking: false, NSPrivacyCollectedDataTypePurposes: ['NSPrivacyCollectedDataTypePurposeAppFunctionality'] },
+        ],
+        NSPrivacyAccessedAPITypes: [
+          { NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategoryUserDefaults', NSPrivacyAccessedAPITypeReasons: ['CA92.1'] },
+          { NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategoryFileTimestamp', NSPrivacyAccessedAPITypeReasons: ['C617.1'] },
+          { NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategorySystemBootTime', NSPrivacyAccessedAPITypeReasons: ['35F9.1'] },
+          { NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategoryDiskSpace', NSPrivacyAccessedAPITypeReasons: ['E174.1'] },
+        ],
+      },
     },
     android: {
       package: androidPackage,
@@ -40,6 +57,17 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     plugins: [
       // WEB_PREVIEW=1 のときは Web を1ファイルにまとめるため、ルートの分割読み込みを止める（scripts/build-web-preview.mjs）
       process.env.WEB_PREVIEW === '1' ? ['expo-router', { asyncRoutes: false }] : 'expo-router',
+      [
+        'expo-splash-screen',
+        {
+          image: './assets/splash-icon.png',
+          imageWidth: 180,
+          resizeMode: 'contain',
+          backgroundColor: '#0B7A70',
+        },
+      ],
+      // アイコン用フォントをアプリに同梱し、起動直後にアイコンが空白になるのを防ぐ
+      ['expo-font', { fonts: ['./node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf'] }],
       [
         'expo-location',
         {

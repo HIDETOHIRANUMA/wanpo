@@ -13,7 +13,7 @@ import {
   type UserPhoto,
 } from '@/domain/ugc';
 import { useApp } from '@/state/AppContext';
-import { Button, Card, Chip, Section } from './components';
+import { Button, Card, Chip, Icon, IconButton, Section, Tag } from './components';
 import { errorMessage } from './errors';
 import { OtpLogin } from './OtpLogin';
 import { colors, radius, space, type } from './theme';
@@ -56,9 +56,14 @@ export function UgcSection({ placeId, canPost }: { placeId: string; canPost: boo
 
   return (
     <>
-      <Section title={`みんなの犬の写真${photos?.length ? `（${photos.length}）` : ''}`}>
+      <Section title={`みんなの犬の写真${photos?.length ? `（${photos.length}）` : ''}`} icon="camera-outline">
         {photos === null && !error ? <Text style={type.small}>読み込み中…</Text> : null}
-        {photos && photos.length === 0 ? <Text style={type.small}>まだ写真はありません。</Text> : null}
+        {photos && photos.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <Icon name="images-outline" size={22} color={colors.textSubtle} />
+            <Text style={[type.small, { flex: 1 }]}>まだ写真はありません。ここで過ごした犬の写真を投稿できます。</Text>
+          </View>
+        ) : null}
         {photos && photos.length > 0 ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }}>
             {photos.map((p) => (
@@ -71,21 +76,26 @@ export function UgcSection({ placeId, canPost }: { placeId: string; canPost: boo
         ) : null}
         <Button
           label="犬の写真を投稿する"
+          icon="camera-outline"
           variant="secondary"
           onPress={canPost ? () => router.push({ pathname: '/photo/[placeId]', params: { placeId } }) : undefined}
           disabledReason={!canPost ? '最新の掲載情報を確認できるときに投稿できます' : undefined}
         />
       </Section>
 
-      <Section title={`みんなの口コミ${reviews?.length ? `（${reviews.length}）` : ''}`}>
-        <Text style={type.small}>利用者の感想です。室内同伴・冷房などの判定は運営の確認情報によるもので、口コミでは変わりません。</Text>
+      <Section title={`みんなの口コミ${reviews?.length ? `（${reviews.length}）` : ''}`} icon="chatbubbles-outline" subtitle="利用者の感想です。室内同伴・冷房などの判定は運営の確認情報によるもので、口コミでは変わりません。">
         {error ? (
           <View style={{ gap: space.sm }}>
             <Text style={{ color: colors.bad }}>{errorMessage(error, '口コミ・写真を読み込めませんでした。')}</Text>
             <Button label="再試行" variant="secondary" onPress={reload} />
           </View>
         ) : null}
-        {reviews && reviews.length === 0 ? <Text style={type.body}>まだ口コミはありません。最初の口コミを書いてみませんか。</Text> : null}
+        {reviews && reviews.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <Icon name="chatbubble-ellipses-outline" size={22} color={colors.textSubtle} />
+            <Text style={[type.small, { flex: 1 }]}>まだ口コミはありません。最初の口コミを書いてみませんか。</Text>
+          </View>
+        ) : null}
         {visibleReviews.map((r) => (
           <ReviewItem key={r.id} review={r} onMenu={() => setAction({ kind: 'review', item: r })} />
         ))}
@@ -94,10 +104,11 @@ export function UgcSection({ placeId, canPost }: { placeId: string; canPost: boo
         ) : null}
         <Button
           label="口コミを書く"
+          icon="create-outline"
           onPress={canPost ? () => router.push({ pathname: '/review/[placeId]', params: { placeId } }) : undefined}
           disabledReason={!canPost ? '最新の掲載情報を確認できるときに書けます' : undefined}
         />
-        {isDemo ? <Text style={type.small}>デモの口コミは架空のものです。投稿した口コミ・写真はこの端末だけに保存されます。</Text> : null}
+        {isDemo ? <Text style={type.caption}>デモの口コミは架空のものです。投稿した口コミ・写真はこの端末だけに保存されます。</Text> : null}
       </Section>
 
       <PhotoViewer
@@ -122,36 +133,39 @@ export function UgcSection({ placeId, canPost }: { placeId: string; canPost: boo
 
 function ReviewItem({ review: r, onMenu }: { review: Review; onMenu: () => void }) {
   return (
-    <Card style={{ gap: 6, padding: space.md }}>
+    <Card style={{ gap: space.sm, padding: space.md }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
         <View style={styles.avatar}>
-          <Text style={{ fontSize: 16 }}>🐾</Text>
+          <Text style={styles.avatarText}>{r.nickname.replace(/^デモ：/, '').slice(0, 1)}</Text>
         </View>
         <View style={{ flex: 1 }}>
           <Text style={type.label}>
             {r.nickname}
             {r.mine ? '（あなた）' : ''}
           </Text>
-          <Text style={type.small}>
+          <Text style={type.caption}>
             {r.publishedAt ? `${formatPostedDate(r.publishedAt)} 投稿` : '未公開'}
             {r.visitedOn ? `・${r.visitedOn.replaceAll('-', '/')} 訪問` : ''}
           </Text>
         </View>
-        <Pressable onPress={onMenu} hitSlop={12} accessibilityRole="button" accessibilityLabel={r.mine ? '自分の口コミの操作（削除）' : 'この口コミを通報'} style={styles.menuBtn}>
-          <Text style={type.small}>{r.mine ? '削除' : '通報'}</Text>
-        </Pressable>
+        <IconButton
+          icon={r.mine ? 'trash-outline' : 'ellipsis-horizontal'}
+          label={r.mine ? '自分の口コミの操作（削除）' : 'この口コミを通報・投稿者をブロック'}
+          onPress={onMenu}
+          background={colors.surfaceAlt}
+          color={colors.textMuted}
+          size={34}
+        />
       </View>
       {r.mine && r.status !== 'approved' ? <Text style={styles.notice}>{UGC_STATUS_LABEL[r.status]}</Text> : null}
+      <Text style={type.body}>{r.body}</Text>
       {r.tags.length ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
           {r.tags.map((t) => (
-            <Text key={t} style={styles.tag}>
-              {REVIEW_TAG_LABEL[t]}
-            </Text>
+            <Tag key={t} label={REVIEW_TAG_LABEL[t]} tone="primary" />
           ))}
         </View>
       ) : null}
-      <Text style={type.body}>{r.body}</Text>
     </Card>
   );
 }
@@ -169,7 +183,7 @@ function PhotoViewer({ photo, onClose, onMenu }: { photo: UserPhoto | null; onCl
               {photo.mine ? '・あなたの写真' : ''}
             </Text>
             <View style={{ flexDirection: 'row', gap: space.sm }}>
-              <Button label={photo.mine ? '削除する' : '通報する'} variant="secondary" onPress={() => onMenu(photo)} style={{ flex: 1 }} />
+              <Button label={photo.mine ? '削除する' : '通報・ブロック'} icon={photo.mine ? 'trash-outline' : 'flag-outline'} variant="outline" onPress={() => onMenu(photo)} style={{ flex: 1 }} />
               <Button label="閉じる" onPress={onClose} style={{ flex: 1 }} />
             </View>
           </View>
@@ -185,6 +199,7 @@ function ActionSheet({ target, onClose, onDone }: { target: Target | null; onClo
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [blocking, setBlocking] = useState(false);
 
   const close = () => {
     setReason(null);
@@ -216,12 +231,25 @@ function ActionSheet({ target, onClose, onDone }: { target: Target | null; onClo
     }
   };
 
+  const block = async () => {
+    setBlocking(true);
+    setMsg(null);
+    try {
+      await backend.ugc.blockAuthor(target.kind, target.item.id);
+      setDone('この投稿者の口コミ・写真は、今後あなたには表示されません。相手に知らされることはありません。解除は「マイページ」→「アカウント」からできます。');
+    } catch (e) {
+      setMsg(errorMessage(e, 'ブロックできませんでした。'));
+    } finally {
+      setBlocking(false);
+    }
+  };
+
   return (
     <Modal visible transparent animationType="slide" onRequestClose={close}>
       <View style={styles.sheetBackdrop}>
         <ScrollView style={styles.sheet} contentContainerStyle={{ padding: space.lg, gap: space.md }} keyboardShouldPersistTaps="handled">
           <Text style={type.title} accessibilityRole="header">
-            {mine ? `自分の${label}を削除` : `${label}を通報`}
+            {mine ? `自分の${label}を削除` : `${label}を通報・ブロック`}
           </Text>
           {done ? (
             <>
@@ -239,14 +267,14 @@ function ActionSheet({ target, onClose, onDone }: { target: Target | null; onClo
             </>
           ) : !auth.signedIn ? (
             <>
-              <Text style={type.body}>{mine ? '削除' : '通報'}にはメールでの確認が必要です。</Text>
+              <Text style={type.body}>{mine ? '削除' : '通報・ブロック'}にはメールでの確認が必要です。</Text>
               <OtpLogin />
               <Button label="やめる" variant="secondary" onPress={close} />
             </>
           ) : mine ? (
             <>
               <Text style={type.body}>この{label}を削除します。元に戻せません。</Text>
-              <Button label="削除する" onPress={run} loading={busy} />
+              <Button label="削除する" icon="trash-outline" variant="danger" onPress={run} loading={busy} />
               <Button label="やめる" variant="secondary" onPress={close} />
             </>
           ) : (
@@ -257,8 +285,13 @@ function ActionSheet({ target, onClose, onDone }: { target: Target | null; onClo
                   <Chip key={r} label={FLAG_REASON_LABEL[r]} selected={reason === r} onPress={() => setReason(r)} />
                 ))}
               </View>
-              <Button label="通報する" onPress={run} loading={busy} disabled={!reason} disabledReason={!reason ? '理由を選んでください' : undefined} />
-              <Button label="やめる" variant="secondary" onPress={close} />
+              <Button label="通報する" icon="flag-outline" onPress={run} loading={busy} disabled={!reason} disabledReason={!reason ? '理由を選んでください' : undefined} />
+              <View style={styles.blockBox}>
+                <Text style={type.label}>この投稿者をブロック</Text>
+                <Text style={type.caption}>この人の口コミ・写真を、今後あなたに表示しないようにします。相手には知らされません。</Text>
+                <Button label="ブロックする" icon="ban-outline" variant="danger" onPress={block} loading={blocking} />
+              </View>
+              <Button label="やめる" variant="ghost" onPress={close} />
             </>
           )}
           {msg ? <Text style={{ color: colors.bad }}>{msg}</Text> : null}
@@ -271,12 +304,13 @@ function ActionSheet({ target, onClose, onDone }: { target: Target | null; onClo
 const styles = StyleSheet.create({
   thumb: { width: 132, height: 132, borderRadius: radius.md, backgroundColor: colors.mint },
   statusPill: { position: 'absolute', left: 6, top: 6, backgroundColor: colors.warnBg, color: colors.warn, fontSize: 11, paddingHorizontal: 6, borderRadius: 6, overflow: 'hidden' },
-  avatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.mint, alignItems: 'center', justifyContent: 'center' },
-  menuBtn: { paddingHorizontal: space.sm, paddingVertical: 4, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border },
-  tag: { fontSize: 12, color: colors.primary, backgroundColor: colors.okBg, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, overflow: 'hidden' },
+  avatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontSize: 15, fontWeight: '800', color: '#8A4A12' },
+  emptyBox: { flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.md, borderRadius: radius.md, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.borderStrong },
+  blockBox: { gap: 6, padding: space.md, borderRadius: radius.md, backgroundColor: colors.surfaceAlt, marginTop: space.sm },
   notice: { ...type.small, color: colors.warn, backgroundColor: colors.warnBg, padding: 6, borderRadius: radius.sm },
   viewerBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.88)', alignItems: 'center', justifyContent: 'center', padding: space.lg },
   viewerImg: { width: '100%', aspectRatio: 1, borderRadius: radius.md },
-  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: colors.bg, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, maxHeight: '85%' },
+  sheetBackdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, maxHeight: '85%' },
 });

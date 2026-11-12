@@ -9,6 +9,7 @@
 - ログイン不要：検索・詳細・口コミと写真の閲覧・保存・犬の条件。**報告・回答・口コミ・写真の投稿・通報** はメールOTP認証
 
 > 実装済み／未検証／実データが必要な項目の一覧は [docs/status.md](docs/status.md) にあります。
+> **リリースまでの残り作業**は [docs/release-checklist.md](docs/release-checklist.md)、ストア掲載文は [docs/store-listing.md](docs/store-listing.md)、利用規約は [docs/terms-of-service.md](docs/terms-of-service.md) にあります。
 
 ---
 
@@ -47,7 +48,7 @@ supabase/
   tests/               RLS テスト（Supabase互換スタブで素の PostgreSQL 上で実行）
 scripts/               投入スクリプト・DBテスト
 templates/             実データ投入テンプレート（JSON / CSV）
-docs/                  運営手順・プライバシー・アカウント削除・実装状況
+docs/                  運営手順・プライバシー・利用規約・アカウント削除・ストア掲載文・リリース手順・実装状況
 ```
 
 ---

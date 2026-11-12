@@ -12,6 +12,9 @@ export interface AppConfig {
   settings: AppSettings;
   /** 本番モードで設定が不足しているか（デモへ自動で切り替えない） */
   configError: string | null;
+  /** 運営者名とお問い合わせ先（ストア審査で必要。公開してよい情報だけを入れる） */
+  operatorName: string | null;
+  supportEmail: string | null;
 }
 
 export function readConfig(env: Record<string, string | undefined>): AppConfig {
@@ -32,7 +35,10 @@ export function readConfig(env: Record<string, string | undefined>): AppConfig {
     else if (/^sb_secret_/.test(key) || /service_role/.test(decodeJwtRole(key) ?? ''))
       configError = '秘密鍵がクライアント設定に含まれています。publishable key を使ってください';
   }
-  return { mode, supabaseUrl: url, supabaseKey: key, settings, configError };
+  const operatorName = env.EXPO_PUBLIC_OPERATOR_NAME?.trim() || null;
+  const rawEmail = env.EXPO_PUBLIC_SUPPORT_EMAIL?.trim() || null;
+  const supportEmail = rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) ? rawEmail : null;
+  return { mode, supabaseUrl: url, supabaseKey: key, settings, configError, operatorName, supportEmail };
 }
 
 /** 旧形式（JWT）のキーが service_role でないかを確認する */
@@ -53,4 +59,6 @@ export const appConfig: AppConfig = readConfig({
   EXPO_PUBLIC_SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL,
   EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
   EXPO_PUBLIC_STALE_AFTER_DAYS: process.env.EXPO_PUBLIC_STALE_AFTER_DAYS,
+  EXPO_PUBLIC_OPERATOR_NAME: process.env.EXPO_PUBLIC_OPERATOR_NAME,
+  EXPO_PUBLIC_SUPPORT_EMAIL: process.env.EXPO_PUBLIC_SUPPORT_EMAIL,
 });

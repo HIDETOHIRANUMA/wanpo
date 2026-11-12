@@ -7,7 +7,7 @@ import type { LatLng } from '@/domain/geo';
 import { toMapMarkers, type SearchOrigin, type SearchResult } from '@/domain/search';
 import { Button } from './components';
 import { MapUnavailable } from './MapUnavailable';
-import { colors, space } from './theme';
+import { colors, shadow, space } from './theme';
 
 export interface SearchMapProps {
   results: SearchResult[];
@@ -65,7 +65,7 @@ export function SearchMap({ results, origin, radiusKm, onSearchHere }: SearchMap
           center={{ latitude: origin.lat, longitude: origin.lng }}
           radius={radiusKm * 1000}
           strokeColor={colors.primary}
-          fillColor="rgba(15,118,110,0.06)"
+          fillColor="rgba(11,122,112,0.07)"
         />
         {markers.map((m) => (
           <Marker
@@ -82,6 +82,7 @@ export function SearchMap({ results, origin, radiusKm, onSearchHere }: SearchMap
         <View style={styles.searchHere}>
           <Button
             label="この範囲で検索"
+            icon="search"
             onPress={() => {
               onSearchHere(moved);
               setMoved(null);
@@ -104,9 +105,10 @@ const styles = StyleSheet.create({
     bottom: space.sm,
     left: space.sm,
     right: space.sm,
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: 12,
     padding: space.sm,
+    ...shadow.card,
   },
   legendText: { fontSize: 13, color: colors.text },
 });

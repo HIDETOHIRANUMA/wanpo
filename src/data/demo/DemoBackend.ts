@@ -150,6 +150,8 @@ interface DemoUgcState {
   reviews: (Review & { requestId: string; createdAt: string })[];
   photos: (UserPhoto & { requestId: string; createdAt: string })[];
   flags: { target: 'review' | 'photo'; id: string; reason: FlagReason }[];
+  /** ブロックした投稿者（デモの架空の口コミはニックネーム） */
+  blocked: string[];
 }
 
 /**
@@ -168,7 +170,7 @@ export class DemoUgc implements UgcService {
 
   private async state(): Promise<DemoUgcState> {
     const s = await this.store.getJson<DemoUgcState>(DEMO_UGC_KEY);
-    return { reviews: s?.reviews ?? [], photos: s?.photos ?? [], flags: s?.flags ?? [] };
+    return { reviews: s?.reviews ?? [], photos: s?.photos ?? [], flags: s?.flags ?? [], blocked: s?.blocked ?? [] };
   }
   private async requireSignedIn() {
     if (!(await this.auth.getState()).signedIn) throw new RepoError('auth_required');
@@ -185,7 +187,7 @@ export class DemoUgc implements UgcService {
     const st = await this.state();
     const out: Record<string, UgcCounts> = {};
     for (const id of placeIds) {
-      const reviews = [...this.seeded, ...st.reviews].filter((r) => r.placeId === id && !this.flagged(st, 'review', r.id));
+      const reviews = [...this.seeded, ...st.reviews].filter((r) => r.placeId === id && !this.flagged(st, 'review', r.id) && !st.blocked.includes(r.nickname));
       const photos = st.photos.filter((p) => p.placeId === id && !this.flagged(st, 'photo', p.id));
       if (reviews.length || photos.length) out[id] = { reviewCount: reviews.length, photoCount: photos.length };
     }
@@ -195,7 +197,8 @@ export class DemoUgc implements UgcService {
   async listReviews(placeId: string): Promise<Review[]> {
     const st = await this.state();
     const mine = st.reviews.filter((r) => r.placeId === placeId).map(({ requestId: _r, createdAt: _c, ...rest }) => rest);
-    const seeded = this.seeded.filter((r) => r.placeId === placeId && !this.flagged(st, 'review', r.id));
+    // デモの架空の口コミは投稿者IDがないため、ニックネーム単位でブロックを扱う
+    const seeded = this.seeded.filter((r) => r.placeId === placeId && !this.flagged(st, 'review', r.id) && !st.blocked.includes(r.nickname));
     return [...mine, ...seeded].sort((a, b) => (b.publishedAt ?? '').localeCompare(a.publishedAt ?? ''));
   }
 
@@ -276,6 +279,23 @@ export class DemoUgc implements UgcService {
     const st = await this.state();
     if (this.flagged(st, target, id)) return;
     await this.store.setJson(DEMO_UGC_KEY, { ...st, flags: [...st.flags, { target, id, reason }] });
+  }
+
+  async blockAuthor(target: 'review' | 'photo', id: string): Promise<void> {
+    await this.requireSignedIn();
+    const st = await this.state();
+    // デモの写真はすべて自分の投稿なので、ブロックできるのは架空の口コミの投稿者だけ
+    const review = target === 'review' ? this.seeded.find((r) => r.id === id) : undefined;
+    if (!review) throw new RepoError('validation', 'target');
+    if (st.blocked.includes(review.nickname)) return;
+    await this.store.setJson(DEMO_UGC_KEY, { ...st, blocked: [...st.blocked, review.nickname] });
+  }
+
+  async unblockAll(): Promise<number> {
+    await this.requireSignedIn();
+    const st = await this.state();
+    await this.store.setJson(DEMO_UGC_KEY, { ...st, blocked: [] });
+    return st.blocked.length;
   }
 }
 

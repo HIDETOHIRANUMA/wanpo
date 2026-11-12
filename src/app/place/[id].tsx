@@ -1,6 +1,7 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RepoError } from '@/data/repository';
 import { validateHttpsUrl } from '@/domain/contact';
 import { contactActions } from '@/ui/contactPolicy';
@@ -11,13 +12,13 @@ import type { Place, Schedule, Weekday } from '@/domain/types';
 import { isStale, keyFreshness, latestVerification, formatJstDate, formatJstDateTime } from '@/domain/verification';
 import { KEY_VERIFICATION_FIELDS } from '@/domain/types';
 import { useApp } from '@/state/AppContext';
-import { Badge, Button, Card, DemoBanner, ErrorState, KV, Loading, Section } from '@/ui/components';
+import { Badge, Button, Card, DemoBanner, ErrorState, Icon, KV, ListRow, Loading, Notice, Section, Tag, type IconName } from '@/ui/components';
 import { MediaGallery, PlaceHero } from '@/ui/PlaceVisual';
 import { UgcSection } from '@/ui/UgcSection';
 import { errorMessage } from '@/ui/errors';
 import { availabilityBadge, baseBadge, fitBadge, freshnessText } from '@/ui/status';
 import { carryText, certificateText, eligibilityText, feeText, orderText, reservationText, waterText, weightText, zoneSummary } from '@/ui/summaries';
-import { colors, space, type } from '@/ui/theme';
+import { colors, radius, shadow, space, type } from '@/ui/theme';
 
 type Source =
   | { kind: 'live'; place: Place }
@@ -123,6 +124,7 @@ function Detail({
   saving: boolean;
   onSave: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   const base = judgeBase(place);
   const fit = judgeDogFit(place, profile);
   const settings = { staleAfterDays: staleDays };
@@ -144,204 +146,308 @@ function Detail({
     }
   };
 
+  const indoorTile: TileInfo =
+    base.indoor === 'confirmed_yes'
+      ? { tone: 'ok', value: '可', note: '確認記録あり' }
+      : base.indoor === 'no'
+        ? { tone: 'bad', value: '不可', note: z.scope === 'terrace' ? 'テラスのみ' : '室内に入れない' }
+        : { tone: 'warn', value: '未確認', note: '確認記録なし' };
+  const airTile: TileInfo =
+    base.air === 'confirmed_yes'
+      ? { tone: 'ok', value: 'あり', note: '確認記録あり' }
+      : base.air === 'no'
+        ? { tone: 'bad', value: 'なし', note: '犬と過ごせる区画' }
+        : { tone: 'warn', value: '未確認', note: '確認記録なし' };
+  const openTile: TileInfo =
+    availability === 'open'
+      ? { tone: 'ok', value: '営業中', note: '営業時間上' }
+      : availability === 'closed'
+        ? { tone: 'neutral', value: '時間外', note: '営業時間上' }
+        : { tone: 'warn', value: '未確認', note: '営業時間' };
+
   return (
-    <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: 48 }}>
-      {src.kind === 'cached' ? (
-        <View style={styles.cache} accessibilityLiveRegion="polite">
-          <Text style={type.label}>通信できないため、保存時の情報を表示しています</Text>
-          <Text style={type.small}>取得日時：{formatJstDateTime(src.fetchedAt)}（最新ではない可能性があります）</Text>
-        </View>
-      ) : null}
-      {src.kind === 'unavailable' ? (
-        <View style={[styles.cache, { backgroundColor: colors.badBg }]}>
-          <Text style={type.label}>現在の掲載情報を確認できません</Text>
-          <Text style={type.small}>以下は保存時の情報です。電話・経路は使えません。</Text>
-        </View>
-      ) : null}
+    <View style={{ flex: 1 }}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 132 + insets.bottom }}>
+        {src.kind === 'cached' ? (
+          <View style={styles.noticeWrap}>
+            <Notice tone="warn" title="通信できないため、保存時の情報を表示しています" body={`取得日時：${formatJstDateTime(src.fetchedAt)}（最新ではない可能性があります）`} icon="cloud-offline-outline" />
+          </View>
+        ) : null}
+        {src.kind === 'unavailable' ? (
+          <View style={styles.noticeWrap}>
+            <Notice tone="bad" title="現在の掲載情報を確認できません" body="以下は保存時の情報です。電話・経路は使えません。" />
+          </View>
+        ) : null}
 
-      {/* 1. 名称・写真 */}
-      <Text style={type.title} accessibilityRole="header">
-        {place.name}
-      </Text>
-      <Text style={type.small}>
-        {CATEGORY_LABEL[place.category]} ・{OPERATING_LABEL[place.operatingStatus]}
-      </Text>
-      <View style={{ marginTop: space.md, borderRadius: 14, overflow: 'hidden' }}>
-        <PlaceHero place={place} height={200} rounded={false} />
-      </View>
-      {place.media.length > 1 ? (
-        <View style={{ marginTop: space.md }}>
-          <MediaGallery media={place.media} />
-        </View>
-      ) : null}
-      {place.atmosphereTags.length ? (
-        <View style={styles.tags} accessibilityLabel={`雰囲気：${place.atmosphereTags.join('、')}`}>
-          {place.atmosphereTags.map((t) => (
-            <Text key={t} style={styles.tag}>
-              {t}
+        <PlaceHero place={place} height={250} rounded={false} />
+
+        <View style={styles.content}>
+          {/* 1. 名称 */}
+          <Card style={styles.titleCard}>
+            <Text style={type.title} accessibilityRole="header">
+              {place.name}
             </Text>
-          ))}
-        </View>
-      ) : null}
-      {place.reservationUrl ? (
-        <Button
-          label="予約ページを開く"
-          onPress={actions.reservationUrl ? () => open(actions.reservationUrl!) : undefined}
-          disabledReason={contactBlocked ?? undefined}
-          accessibilityHint="お店の予約ページをブラウザで開きます"
-          style={{ marginTop: space.md }}
-        />
-      ) : null}
+            <View style={styles.metaRow}>
+              <MetaItem icon="storefront-outline" text={CATEGORY_LABEL[place.category]} />
+              {place.areaName ? <MetaItem icon="location-outline" text={place.areaName} /> : null}
+              <MetaItem icon="information-circle-outline" text={OPERATING_LABEL[place.operatingStatus]} />
+            </View>
+            {place.atmosphereTags.length ? (
+              <View style={styles.tags} accessibilityLabel={`雰囲気：${place.atmosphereTags.join('、')}`}>
+                {place.atmosphereTags.map((t) => (
+                  <Tag key={t} label={t} tone="primary" />
+                ))}
+              </View>
+            ) : null}
+          </Card>
 
-      {/* 2. 犬と過ごせる区画 */}
-      <Section title="犬と過ごせる区画">
-        <Card style={{ gap: space.sm }}>
-          <Text style={type.heading}>{zoneSummary(z)}</Text>
-          <Badge info={baseBadge(base)} />
-          <KV k="室内同伴" v={base.indoor === 'confirmed_yes' ? '可（確認記録あり）' : base.indoor === 'no' ? (z.scope === 'terrace' ? '不可（テラスのみ）' : '不可') : '未確認'} />
-          <KV k="冷房" v={base.air === 'confirmed_yes' ? 'あり（確認記録あり）' : base.air === 'no' ? 'なし' : '未確認'} />
-          <Text style={type.small}>この区画についての情報です。施設内の別の場所の冷房は含みません。</Text>
-          {z.scope === 'indoor_partial' || z.scope === 'private_room' ? (
-            <Text style={type.small}>※ {ZONE_SCOPE_LABEL[z.scope]}。他の席では犬と過ごせません。</Text>
+          {/* 2. ひと目で分かる確認状況 */}
+          <View style={styles.tiles}>
+            <Tile icon="paw" label="室内同伴" info={indoorTile} />
+            <Tile icon="snow" label="冷房" info={airTile} />
+            <Tile icon="time" label="いま" info={openTile} />
+          </View>
+          <View style={{ gap: 6, marginTop: space.md }}>
+            <Badge info={baseBadge(base)} />
+            <Badge info={freshnessText(freshness)} />
+          </View>
+
+          {place.media.length > 1 ? (
+            <Section title="お店の写真" icon="images-outline">
+              <MediaGallery media={place.media} />
+            </Section>
           ) : null}
-        </Card>
-      </Section>
 
-      {/* 3. 登録した犬の条件との一致 */}
-      <Section title="うちの犬の条件との照合">
-        <Card style={{ gap: space.sm }}>
-          <Badge info={fitBadge(fit.result)} />
-          {fit.reasons.map((r, i) => (
-            <Text key={i} style={type.body}>
-              {r.result === 'match' ? '● ' : r.result === 'mismatch' ? '✕ ' : '▲ '}
-              {r.message}
-            </Text>
-          ))}
-          <Text style={type.small}>
-            登録内容と掲載情報の照合結果です。当日の入店・冷房の稼働・空席を保証するものではありません。
-          </Text>
-          {!profile ? <Button label="犬の条件を登録する" variant="secondary" onPress={() => router.push('/profile')} /> : null}
-        </Card>
-      </Section>
-
-      {/* 4. 犬同伴の条件 */}
-      <Section title="犬同伴の条件">
-        <KV k="体重制限" v={weightText(z)} />
-        <KV k="同伴方法" v={`${carryText(z)}${z.carry.text ? `（${z.carry.text}）` : ''}`} />
-        <KV k="証明書" v={certificateText(z)} />
-        {z.extraRequirements.map((x, i) => (
-          <KV key={i} k={x.effect === 'needs_check' ? '追加条件（要確認）' : '注意事項'} v={x.text} />
-        ))}
-      </Section>
-
-      {/* 5. 利用条件 */}
-      <Section title="注文・予約・料金・利用資格">
-        <KV k="注文" v={orderText(u)} />
-        <KV k="予約" v={reservationText(u)} />
-        <KV k="料金" v={feeText(u)} />
-        <KV k="利用資格" v={eligibilityText(u)} />
-        <KV k="犬用の水" v={waterText(u)} />
-      </Section>
-
-      {/* 6. 営業時間 */}
-      <Section title="営業時間・犬同伴可能時間">
-        <Badge info={availabilityBadge(availability)} />
-        <Text style={type.small}>登録された時間による表示です。実際の営業・空席の状況ではありません。</Text>
-        <HoursTable label="営業時間" schedule={place.businessHours} now={now} />
-        {place.dogHours.mode === 'same_as_business' ? (
-          <KV k="犬同伴可能時間" v="営業時間と同じ" />
-        ) : place.dogHours.mode === 'unknown' ? (
-          <KV k="犬同伴可能時間" v="未確認" />
-        ) : (
-          <HoursTable label="犬同伴可能時間" schedule={place.dogHours.schedule} now={now} />
-        )}
-        {[...place.businessHours.exceptions].sort((a, b) => a.date.localeCompare(b.date)).map((e) => (
-          <KV key={e.date} k={`${e.date.replaceAll('-', '/')}`} v={`${e.closed ? '休業' : formatPeriods(e.periods)}${e.note ? `（${e.note}）` : ''}`} />
-        ))}
-      </Section>
-
-      {/* 7. 住所・確認情報 */}
-      <Section title="住所・確認情報">
-        <KV k="住所" v={place.address} />
-        <Badge info={freshnessText(freshness)} />
-        <Text style={type.small}>
-          確認日は室内同伴・冷房・犬の条件のうち最も古い確認です。{staleDays}日を超えたものは再確認をおすすめします（運用上の目安です）。
-        </Text>
-        {KEY_VERIFICATION_FIELDS.concat(['usage_conditions', 'hours']).map((f) => {
-          const v = latestVerification(place.verifications, f);
-          return (
-            <Card key={f} style={{ gap: 2, padding: space.md }}>
-              <Text style={type.label}>{VERIFICATION_FIELD_LABEL[f]}</Text>
-              {v ? (
-                <>
-                  <Text style={type.body}>
-                    {formatJstDate(v.verifiedAt)}・{VERIFICATION_METHOD_LABEL[v.method]}
-                    {isStale(v, now, settings) ? '・再確認をおすすめ' : ''}
-                  </Text>
-                  {v.evidenceNote ? <Text style={type.small}>根拠：{v.evidenceNote}</Text> : null}
-                  {v.evidenceUrl && validateHttpsUrl(v.evidenceUrl) && !isDemo ? (
-                    <Button label="根拠のページを開く" variant="ghost" onPress={() => open(v.evidenceUrl!)} />
-                  ) : null}
-                </>
-              ) : (
-                <Text style={type.body}>未確認</Text>
-              )}
+          {/* 3. 犬と過ごせる区画 */}
+          <Section title="犬と過ごせる区画" icon="paw-outline">
+            <Card style={{ gap: space.xs }}>
+              <Text style={type.heading}>{zoneSummary(z)}</Text>
+              <KV k="室内同伴" icon="enter-outline" v={base.indoor === 'confirmed_yes' ? '可（確認記録あり）' : base.indoor === 'no' ? (z.scope === 'terrace' ? '不可（テラスのみ）' : '不可') : '未確認'} />
+              <KV k="冷房" icon="snow-outline" v={base.air === 'confirmed_yes' ? 'あり（確認記録あり）' : base.air === 'no' ? 'なし' : '未確認'} />
+              <Text style={type.caption}>この区画についての情報です。施設内の別の場所の冷房は含みません。</Text>
+              {z.scope === 'indoor_partial' || z.scope === 'private_room' ? (
+                <Text style={type.caption}>※ {ZONE_SCOPE_LABEL[z.scope]}。他の席では犬と過ごせません。</Text>
+              ) : null}
             </Card>
-          );
-        })}
-        {place.description ? <Text style={type.body}>{place.description}</Text> : null}
-      </Section>
+          </Section>
 
-      {/* 8. 操作 */}
-      <Section title="行く前に">
-        <Button
-          label="電話で確認"
-          onPress={actions.telUrl ? () => open(actions.telUrl!) : undefined}
-          disabledReason={contactBlocked ?? (!actions.telUrl ? '電話番号は掲載されていません' : undefined)}
-        />
-        <Button
-          label="公式サイト"
-          variant="secondary"
-          onPress={actions.officialUrl ? () => open(actions.officialUrl!) : undefined}
-          disabledReason={contactBlocked ?? (!actions.officialUrl ? '公式サイトは掲載されていません' : undefined)}
-        />
-        {place.reservationUrl ? (
+          {/* 4. 登録した犬の条件との一致 */}
+          <Section title="うちの犬の条件との照合" icon="heart-outline">
+            <Card style={{ gap: space.sm }}>
+              <Badge info={fitBadge(fit.result)} />
+              {fit.reasons.map((r, i) => (
+                <View key={i} style={styles.reason}>
+                  <Icon
+                    name={r.result === 'match' ? 'checkmark-circle' : r.result === 'mismatch' ? 'close-circle' : 'alert-circle'}
+                    size={18}
+                    color={r.result === 'match' ? colors.ok : r.result === 'mismatch' ? colors.bad : colors.warn}
+                    style={{ marginTop: 2 }}
+                  />
+                  <Text style={[type.body, { flex: 1 }]}>{r.message}</Text>
+                </View>
+              ))}
+              <Text style={type.caption}>登録内容と掲載情報の照合結果です。当日の入店・冷房の稼働・空席を保証するものではありません。</Text>
+              {!profile ? <Button label="犬の条件を登録する" icon="paw-outline" variant="secondary" onPress={() => router.push('/profile')} /> : null}
+            </Card>
+          </Section>
+
+          {/* 5. 犬同伴の条件 */}
+          <Section title="犬同伴の条件" icon="shield-checkmark-outline">
+            <Card style={{ paddingVertical: space.sm }}>
+              <KV k="体重制限" icon="scale-outline" v={weightText(z)} />
+              <KV k="同伴方法" icon="bag-handle-outline" v={`${carryText(z)}${z.carry.text ? `（${z.carry.text}）` : ''}`} />
+              <KV k="証明書" icon="ribbon-outline" v={certificateText(z)} />
+              {z.extraRequirements.map((x, i) => (
+                <KV key={i} k={x.effect === 'needs_check' ? '追加条件（要確認）' : '注意事項'} icon="alert-circle-outline" v={x.text} />
+              ))}
+            </Card>
+          </Section>
+
+          {/* 6. 利用条件 */}
+          <Section title="注文・予約・料金・利用資格" icon="receipt-outline">
+            <Card style={{ paddingVertical: space.sm }}>
+              <KV k="注文" icon="cafe-outline" v={orderText(u)} />
+              <KV k="予約" icon="calendar-outline" v={reservationText(u)} />
+              <KV k="料金" icon="pricetag-outline" v={feeText(u)} />
+              <KV k="利用資格" icon="person-outline" v={eligibilityText(u)} />
+              <KV k="犬用の水" icon="water-outline" v={waterText(u)} />
+            </Card>
+          </Section>
+
+          {/* 7. 営業時間 */}
+          <Section title="営業時間・犬同伴可能時間" icon="time-outline">
+            <Card style={{ gap: space.md }}>
+              <Badge info={availabilityBadge(availability)} />
+              <HoursTable label="営業時間" schedule={place.businessHours} now={now} />
+              {place.dogHours.mode === 'same_as_business' ? (
+                <KV k="犬同伴可能時間" v="営業時間と同じ" />
+              ) : place.dogHours.mode === 'unknown' ? (
+                <KV k="犬同伴可能時間" v="未確認" />
+              ) : (
+                <HoursTable label="犬同伴可能時間" schedule={place.dogHours.schedule} now={now} />
+              )}
+              {[...place.businessHours.exceptions].sort((a, b) => a.date.localeCompare(b.date)).map((e) => (
+                <KV key={e.date} k={`${e.date.replaceAll('-', '/')}`} icon="calendar-number-outline" v={`${e.closed ? '休業' : formatPeriods(e.periods)}${e.note ? `（${e.note}）` : ''}`} />
+              ))}
+              <Text style={type.caption}>登録された時間による表示です。実際の営業・空席の状況ではありません。</Text>
+            </Card>
+          </Section>
+
+          {/* 8. 住所・確認情報 */}
+          <Section title="住所・確認情報" icon="document-text-outline">
+            <Card style={{ gap: space.sm }}>
+              <KV k="住所" icon="location-outline" v={place.address} />
+              {place.description ? <Text style={type.body}>{place.description}</Text> : null}
+              <Text style={type.caption}>
+                確認日は室内同伴・冷房・犬の条件のうち最も古い確認です。{staleDays}日を超えたものは再確認をおすすめします（運用上の目安です）。
+              </Text>
+              <View style={{ gap: 0 }}>
+                {KEY_VERIFICATION_FIELDS.concat(['usage_conditions', 'hours']).map((f, i, arr) => {
+                  const v = latestVerification(place.verifications, f);
+                  return (
+                    <View key={f} style={[styles.verRow, i < arr.length - 1 && styles.verBorder]}>
+                      <Icon name={v ? (isStale(v, now, settings) ? 'alert-circle' : 'checkmark-circle') : 'ellipse-outline'} size={18} color={v ? (isStale(v, now, settings) ? colors.warn : colors.ok) : colors.textSubtle} style={{ marginTop: 2 }} />
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={type.label}>{VERIFICATION_FIELD_LABEL[f]}</Text>
+                        {v ? (
+                          <>
+                            <Text style={type.small}>
+                              {formatJstDate(v.verifiedAt)}・{VERIFICATION_METHOD_LABEL[v.method]}
+                              {isStale(v, now, settings) ? '・再確認をおすすめ' : ''}
+                            </Text>
+                            {v.evidenceNote ? <Text style={type.caption}>根拠：{v.evidenceNote}</Text> : null}
+                            {v.evidenceUrl && validateHttpsUrl(v.evidenceUrl) && !isDemo ? (
+                              <Button label="根拠のページを開く" icon="open-outline" variant="ghost" size="sm" onPress={() => open(v.evidenceUrl!)} style={{ alignSelf: 'flex-start' }} />
+                            ) : null}
+                          </>
+                        ) : (
+                          <Text style={type.small}>未確認</Text>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </Card>
+          </Section>
+
+          {/* 9. 行く前に */}
+          <Section title="行く前に" icon="information-circle-outline">
+            <Button
+              label="公式サイト"
+              icon="globe-outline"
+              variant="outline"
+              onPress={actions.officialUrl ? () => open(actions.officialUrl!) : undefined}
+              disabledReason={contactBlocked ?? (!actions.officialUrl ? '公式サイトは掲載されていません' : undefined)}
+            />
+            {place.reservationUrl ? (
+              <Text style={type.caption}>空席・予約の可否は予約ページでご確認ください。犬連れであることを予約時に伝えるのがおすすめです。</Text>
+            ) : null}
+            <Card style={{ padding: 0, overflow: 'hidden', marginTop: space.xs }}>
+              <ListRow
+                icon="create-outline"
+                title="情報の修正を知らせる"
+                subtitle={src.kind !== 'live' ? '最新の掲載情報を確認できるときに送れます' : '営業時間や犬の条件の変更など'}
+                onPress={src.kind === 'live' ? () => router.push({ pathname: '/report/[placeId]', params: { placeId: place.id, type: 'correction' } }) : () => undefined}
+              />
+              <ListRow
+                icon="chatbox-ellipses-outline"
+                title="犬と過ごせたか回答する"
+                subtitle={src.kind !== 'live' ? '最新の掲載情報を確認できるときに回答できます' : '運営の確認用アンケート'}
+                onPress={src.kind === 'live' ? () => router.push({ pathname: '/report/[placeId]', params: { placeId: place.id, type: 'dog_ok_vote' } }) : () => undefined}
+                last
+              />
+            </Card>
+            <Text style={type.caption}>報告・回答は運営が確認してから掲載に反映するかを判断します。公開されたり、自動で反映されたりはしません。</Text>
+          </Section>
+
+          {/* 10. 利用者の投稿 */}
+          <UgcSection placeId={place.id} canPost={src.kind === 'live'} />
+        </View>
+      </ScrollView>
+
+      {/* 下部の操作バー：保存・電話・経路・予約 */}
+      <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, space.md) }]}>
+        {contactBlocked ? (
+          <View style={styles.barNote}>
+            <Icon name="information-circle-outline" size={14} color={colors.textMuted} />
+            <Text style={[type.caption, { flex: 1 }]}>{contactBlocked}</Text>
+          </View>
+        ) : null}
+        <View style={styles.barRow}>
+          <Pressable
+            onPress={onSave}
+            disabled={saving}
+            accessibilityRole="button"
+            accessibilityLabel={saved ? '保存済み。タップで保存を解除' : '保存する'}
+            accessibilityState={{ selected: saved, busy: saving }}
+            style={({ pressed }) => [styles.saveBtn, saved && { borderColor: '#F5C2C4', backgroundColor: '#FFF1F1' }, pressed && { opacity: 0.8 }]}
+          >
+            <Icon name={saved ? 'heart' : 'heart-outline'} size={22} color={saved ? colors.heart : colors.text} />
+            <Text style={[styles.saveText, saved && { color: colors.heart }]}>{saved ? '保存済み' : '保存'}</Text>
+          </Pressable>
           <Button
-            label="予約ページを開く"
-            variant="secondary"
-            onPress={actions.reservationUrl ? () => open(actions.reservationUrl!) : undefined}
-            disabledReason={contactBlocked ?? undefined}
+            label="電話"
+            icon="call-outline"
+            variant="outline"
+            onPress={actions.telUrl ? () => open(actions.telUrl!) : undefined}
+            accessibilityHint={!actions.telUrl && !contactBlocked ? '電話番号は掲載されていません' : undefined}
+            style={{ flex: 1 }}
           />
-        ) : null}
-        {place.reservationUrl ? (
-          <Text style={type.small}>空席・予約の可否は予約ページでご確認ください。犬連れであることを予約時に伝えるのがおすすめです。</Text>
-        ) : null}
-        <Button
-          label="経路を見る（地図アプリ）"
-          variant="secondary"
-          onPress={actions.directionsUrl ? () => open(actions.directionsUrl!) : undefined}
-          disabledReason={contactBlocked ?? undefined}
-          accessibilityHint="端末の地図アプリで目的地を開きます。現在地は送信しません"
-        />
-        <Button label={saved ? '保存済み（タップで解除）' : '保存する'} variant={saved ? 'secondary' : 'primary'} onPress={onSave} loading={saving} />
-        <Button
-          label="情報の修正を知らせる"
-          variant="ghost"
-          onPress={src.kind === 'live' ? () => router.push({ pathname: '/report/[placeId]', params: { placeId: place.id, type: 'correction' } }) : undefined}
-          disabledReason={src.kind !== 'live' ? '最新の掲載情報を確認できるときに送れます' : undefined}
-        />
-        <Button
-          label="犬と過ごせたか回答する（運営の確認用）"
-          variant="ghost"
-          onPress={src.kind === 'live' ? () => router.push({ pathname: '/report/[placeId]', params: { placeId: place.id, type: 'dog_ok_vote' } }) : undefined}
-          disabledReason={src.kind !== 'live' ? '最新の掲載情報を確認できるときに回答できます' : undefined}
-        />
-        <Text style={type.small}>報告・回答は運営が確認してから掲載に反映するかを判断します。公開されたり、自動で反映されたりはしません。</Text>
-      </Section>
+          <Button
+            label="経路"
+            icon="navigate-outline"
+            variant={place.reservationUrl ? 'outline' : 'primary'}
+            onPress={actions.directionsUrl ? () => open(actions.directionsUrl!) : undefined}
+            accessibilityHint="端末の地図アプリで目的地を開きます。現在地は送信しません"
+            style={{ flex: 1 }}
+          />
+          {place.reservationUrl ? (
+            <Button
+              label="予約"
+              icon="calendar-outline"
+              onPress={actions.reservationUrl ? () => open(actions.reservationUrl!) : undefined}
+              accessibilityHint="お店の予約ページをブラウザで開きます"
+              style={{ flex: 1.2 }}
+            />
+          ) : null}
+        </View>
+      </View>
+    </View>
+  );
+}
 
-      {/* 9. 利用者の投稿 */}
-      <UgcSection placeId={place.id} canPost={src.kind === 'live'} />
-    </ScrollView>
+type TileInfo = { tone: 'ok' | 'warn' | 'bad' | 'neutral'; value: string; note: string };
+
+function Tile({ icon, label, info }: { icon: IconName; label: string; info: TileInfo }) {
+  const c =
+    info.tone === 'ok'
+      ? { fg: colors.ok, bg: colors.okBg }
+      : info.tone === 'bad'
+        ? { fg: colors.bad, bg: colors.badBg }
+        : info.tone === 'warn'
+          ? { fg: colors.warn, bg: colors.warnBg }
+          : { fg: colors.neutral, bg: colors.neutralBg };
+  return (
+    <View style={styles.tile} accessible accessibilityLabel={`${label}：${info.value}（${info.note}）`}>
+      <View style={[styles.tileIcon, { backgroundColor: c.bg }]}>
+        <Icon name={icon} size={18} color={c.fg} />
+      </View>
+      <Text style={type.overline}>{label}</Text>
+      <Text style={[styles.tileValue, { color: c.fg }]}>{info.value}</Text>
+      <Text style={type.caption} numberOfLines={1}>
+        {info.note}
+      </Text>
+    </View>
+  );
+}
+
+function MetaItem({ icon, text }: { icon: IconName; text: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+      <Icon name={icon} size={14} color={colors.textMuted} />
+      <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textMuted }}>{text}</Text>
+    </View>
   );
 }
 
@@ -350,19 +456,42 @@ function HoursTable({ label, schedule, now }: { label: string; schedule: Schedul
   if (schedule.weekly.status !== 'confirmed') return <KV k={label} v="未確認" />;
   return (
     <View style={{ gap: 2 }}>
-      <Text style={type.label}>{label}</Text>
-      {([1, 2, 3, 4, 5, 6, 0] as Weekday[]).map((d) => (
-        <Text key={d} style={[type.body, d === today.weekday && { fontWeight: '700' }]}>
-          {WEEKDAY_LABEL[d]}　{formatPeriods(schedule.weekly.byWeekday[d])}
-          {d === today.weekday ? `（今日${periodsForDate(schedule, today.date, today.weekday) !== schedule.weekly.byWeekday[d] ? '・日付別の変更あり' : ''}）` : ''}
-        </Text>
-      ))}
+      <Text style={[type.label, { marginBottom: 4 }]}>{label}</Text>
+      {([1, 2, 3, 4, 5, 6, 0] as Weekday[]).map((d) => {
+        const isToday = d === today.weekday;
+        const changed = isToday && periodsForDate(schedule, today.date, today.weekday) !== schedule.weekly.byWeekday[d];
+        return (
+          <View key={d} style={[styles.hourRow, isToday && styles.hourToday]}>
+            <Text style={[styles.hourDay, isToday && { color: colors.primaryInk }]}>{WEEKDAY_LABEL[d]}</Text>
+            <Text style={[type.body, { flex: 1 }, isToday && { fontWeight: '700' }]}>{formatPeriods(schedule.weekly.byWeekday[d])}</Text>
+            {isToday ? <Text style={styles.todayPill}>{changed ? '今日・日付別の変更あり' : '今日'}</Text> : null}
+          </View>
+        );
+      })}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  cache: { backgroundColor: colors.warnBg, padding: space.md, borderRadius: 8, marginBottom: space.md, gap: 2 },
-  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: space.md },
-  tag: { fontSize: 13, color: colors.text, backgroundColor: colors.mint, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3, overflow: 'hidden' },
+  noticeWrap: { padding: space.lg, paddingBottom: space.md },
+  content: { paddingHorizontal: space.lg },
+  titleCard: { marginTop: -36, gap: space.sm },
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', columnGap: space.md, rowGap: 4 },
+  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tiles: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
+  tile: { flex: 1, backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: space.md, gap: 2, ...shadow.card },
+  tileIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  tileValue: { fontSize: 18, lineHeight: 24, fontWeight: '800' },
+  reason: { flexDirection: 'row', gap: space.sm },
+  verRow: { flexDirection: 'row', gap: space.sm, paddingVertical: space.sm },
+  verBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+  hourRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: 5, paddingHorizontal: space.sm, borderRadius: radius.sm },
+  hourToday: { backgroundColor: colors.primarySoft },
+  hourDay: { width: 22, fontSize: 14, fontWeight: '700', color: colors.textMuted },
+  todayPill: { fontSize: 11, fontWeight: '800', color: colors.white, backgroundColor: colors.primary, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, overflow: 'hidden' },
+  bar: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: colors.surface, paddingTop: space.sm, paddingHorizontal: space.lg, gap: 6, borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border, ...shadow.bar },
+  barNote: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  barRow: { flexDirection: 'row', gap: space.sm, alignItems: 'stretch' },
+  saveBtn: { width: 64, minHeight: 48, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.borderStrong, alignItems: 'center', justifyContent: 'center', gap: 0 },
+  saveText: { fontSize: 10.5, fontWeight: '700', color: colors.text },
 });

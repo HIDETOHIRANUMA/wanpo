@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Image, ScrollView, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import { CATEGORY_LABEL } from '@/domain/labels';
 import type { MediaKind, Place, PlaceCategory, PlaceMedia } from '@/domain/types';
+import { Icon } from './components';
 import { colors, radius, space, type } from './theme';
 
 export const MEDIA_KIND_LABEL: Record<MediaKind, string> = {
@@ -71,7 +72,7 @@ function Shop({ pal, variant, restaurant }: { pal: Palette; variant: number; res
   return (
     <View style={[styles.building, { backgroundColor: pal.wall }]}>
       <View style={[styles.signBand, { backgroundColor: pal.sign }]}>
-        <Text style={styles.signGlyph}>{restaurant ? '🍽' : '☕'}</Text>
+        <Icon name={restaurant ? 'restaurant' : 'cafe'} size={15} color="#FFFFFF" />
       </View>
       <View style={styles.awning}>
         {stripes.map((_, i) => (
@@ -93,9 +94,7 @@ function Shop({ pal, variant, restaurant }: { pal: Palette; variant: number; res
       </View>
       <View style={styles.planters}>
         <Plant />
-        <Text style={styles.dog} accessibilityElementsHidden importantForAccessibility="no">
-          🐕
-        </Text>
+        <Icon name="paw" size={16} color={pal.sign} style={{ marginBottom: 1 }} />
         <Plant />
       </View>
     </View>
@@ -155,10 +154,21 @@ function Lounge({ pal }: { pal: Palette }) {
  * 一覧・詳細の上部ビジュアル。運営が権利を確認した店舗写真があれば写真、なければイメージイラスト。
  * 写真には出典を必ず重ねて表示する。
  */
-export function PlaceHero({ place, height = 168, rounded = true }: { place: Place; height?: number; rounded?: boolean }) {
+export function PlaceHero({
+  place,
+  height = 168,
+  rounded = true,
+  overlay,
+}: {
+  place: Place;
+  height?: number;
+  rounded?: boolean | 'all';
+  /** 右上に重ねる操作（保存ボタンなど） */
+  overlay?: React.ReactNode;
+}) {
   const cover = coverMedia(place.media);
   const [failed, setFailed] = useState(false);
-  const r = rounded ? { borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg } : null;
+  const r = rounded === 'all' ? { borderRadius: radius.lg } : rounded ? { borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg } : null;
   if (cover && !failed) {
     return (
       <View style={[{ height, overflow: 'hidden', backgroundColor: colors.mint }, r]}>
@@ -170,13 +180,13 @@ export function PlaceHero({ place, height = 168, rounded = true }: { place: Plac
           accessibilityLabel={`${place.name}の${MEDIA_KIND_LABEL[cover.kind]}の写真`}
         />
         <View style={styles.pillTL}>
-          <Text style={styles.pillText}>{MEDIA_KIND_LABEL[cover.kind]}</Text>
+          <Icon name="image-outline" size={12} color="#FFFFFF" />
+          <Text style={styles.pillText}>
+            {MEDIA_KIND_LABEL[cover.kind]}
+            {place.media.length > 1 ? `・写真 ${place.media.length}枚` : ''}
+          </Text>
         </View>
-        {place.media.length > 1 ? (
-          <View style={styles.pillTR}>
-            <Text style={styles.pillText}>写真 {place.media.length}枚</Text>
-          </View>
-        ) : null}
+        {overlay ? <View style={styles.overlayTR}>{overlay}</View> : null}
         <View style={styles.credit}>
           <Text style={styles.creditText} numberOfLines={1}>
             写真：{cover.credit}
@@ -193,8 +203,25 @@ export function PlaceHero({ place, height = 168, rounded = true }: { place: Plac
     >
       <StorefrontIllustration seed={place.id} category={place.category} style={{ flex: 1 }} />
       <View style={styles.pillTL}>
+        <Icon name="color-palette-outline" size={12} color="#FFFFFF" />
         <Text style={styles.pillText}>イメージ（写真未登録）</Text>
       </View>
+      {overlay ? <View style={styles.overlayTR}>{overlay}</View> : null}
+    </View>
+  );
+}
+
+/** 保存一覧などの小さな正方形の画像（写真があれば写真、なければイメージ） */
+export function PlaceThumb({ place, size = 76 }: { place: Place; size?: number }) {
+  const cover = coverMedia(place.media);
+  const [failed, setFailed] = useState(false);
+  return (
+    <View style={{ width: size, height: size, borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.mint }}>
+      {cover && !failed ? (
+        <Image source={{ uri: cover.url }} style={StyleSheet.absoluteFill} resizeMode="cover" onError={() => setFailed(true)} accessibilityLabel={`${place.name}の写真`} />
+      ) : (
+        <StorefrontIllustration seed={place.id} category={place.category} style={{ flex: 1 }} />
+      )}
     </View>
   );
 }
@@ -231,7 +258,6 @@ const styles = StyleSheet.create({
   ground: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '13%' },
   building: { width: '68%', height: '80%', marginBottom: '6%', borderTopLeftRadius: 6, borderTopRightRadius: 6, overflow: 'hidden', zIndex: 1 },
   signBand: { height: '16%', alignItems: 'center', justifyContent: 'center' },
-  signGlyph: { fontSize: 16 },
   awning: { height: '13%', flexDirection: 'row' },
   scallops: { flexDirection: 'row', height: 8, marginTop: -4 },
   scallop: { flex: 1, height: 8, borderBottomLeftRadius: 8, borderBottomRightRadius: 8 },
@@ -245,7 +271,6 @@ const styles = StyleSheet.create({
   planters: { position: 'absolute', bottom: 0, left: 4, right: 4, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
   leaf: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#5E9C6E' },
   pot: { width: 12, height: 9, backgroundColor: '#B5734B', borderBottomLeftRadius: 3, borderBottomRightRadius: 3 },
-  dog: { fontSize: 18, marginBottom: -2 },
   mall: { width: '72%', height: '84%', marginBottom: '6%', borderWidth: 3, borderBottomWidth: 0, borderTopLeftRadius: 4, borderTopRightRadius: 4, padding: 8, gap: 6, zIndex: 1 },
   mallSign: { height: 10, borderRadius: 3, width: '50%', alignSelf: 'center' },
   mallRow: { flex: 1, flexDirection: 'row', gap: 6 },
@@ -255,9 +280,9 @@ const styles = StyleSheet.create({
   bench: { width: '62%', height: 12, borderRadius: 3 },
   benchLegs: { width: '54%', flexDirection: 'row', justifyContent: 'space-between', height: 12 },
   leg: { width: 4, height: 12 },
-  pillTL: { position: 'absolute', top: 8, left: 8, backgroundColor: 'rgba(22,53,46,0.78)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
-  pillTR: { position: 'absolute', top: 8, right: 8, backgroundColor: 'rgba(22,53,46,0.78)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
-  pillText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  pillTL: { position: 'absolute', top: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(8,26,23,0.62)', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 },
+  overlayTR: { position: 'absolute', top: 8, right: 8 },
+  pillText: { color: '#fff', fontSize: 11.5, fontWeight: '700' },
   credit: { position: 'absolute', right: 0, bottom: 0, maxWidth: '80%', backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 8, paddingVertical: 2, borderTopLeftRadius: 6 },
   creditText: { color: '#fff', fontSize: 11 },
   galleryImg: { width: 260, height: 170, borderRadius: radius.md, backgroundColor: colors.mint, marginBottom: 4 },

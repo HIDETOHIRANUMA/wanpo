@@ -28,7 +28,16 @@ interface AppContextValue {
   lastOrigin: LastOriginStore;
   auth: AuthState;
   clearLocalData(): Promise<void>;
+  /** 初回の使い方案内を見終えたか */
+  onboarded: boolean;
+  completeOnboarding(): Promise<void>;
+  /** 投稿前の利用規約・投稿ガイドラインへの同意（この端末で1回） */
+  termsAccepted: boolean;
+  acceptTerms(): Promise<void>;
 }
+
+const ONBOARDING_KEY = 'onboarding-v1';
+const TERMS_KEY = 'terms-accepted-v1';
 
 const Ctx = createContext<AppContextValue | null>(null);
 
@@ -57,6 +66,8 @@ export function AppProvider({ children, fallback }: { children: React.ReactNode;
   const [ready, setReady] = useState(false);
   const [profile, setProfile] = useState<DogProfile | null>(null);
   const [saved, setSaved] = useState<SavedEntry[]>([]);
+  const [onboarded, setOnboarded] = useState(true);
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [auth, setAuth] = useState<AuthState>({ signedIn: false, maskedEmail: null, simulated: config.mode === 'demo' });
 
   useEffect(() => {
@@ -69,16 +80,23 @@ export function AppProvider({ children, fallback }: { children: React.ReactNode;
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [p, s] = await Promise.all([profileStore.load(), savedStore.list()]);
+      const [p, s, ob, terms] = await Promise.all([
+        profileStore.load(),
+        savedStore.list(),
+        store.getJson<{ at: string }>(ONBOARDING_KEY).catch(() => null),
+        store.getJson<{ at: string }>(TERMS_KEY).catch(() => null),
+      ]);
       if (!alive) return;
       setProfile(p);
       setSaved(s);
+      setOnboarded(!!ob);
+      setTermsAccepted(!!terms);
       setReady(true);
     })().catch(() => setReady(true));
     return () => {
       alive = false;
     };
-  }, [profileStore, savedStore]);
+  }, [profileStore, savedStore, store]);
 
   useEffect(() => {
     if (!backend) return;
@@ -107,9 +125,20 @@ export function AppProvider({ children, fallback }: { children: React.ReactNode;
   const reloadSaved = useCallback(async () => setSaved(await savedStore.list()), [savedStore]);
 
   const clearLocalData = useCallback(async () => {
-    await store.clearMode(['demo-auth']);
+    await store.clearMode(['demo-auth', ONBOARDING_KEY]);
     setProfile(null);
     setSaved([]);
+    setTermsAccepted(false);
+  }, [store]);
+
+  const completeOnboarding = useCallback(async () => {
+    setOnboarded(true);
+    await store.setJson(ONBOARDING_KEY, { at: new Date().toISOString() }).catch(() => undefined);
+  }, [store]);
+
+  const acceptTerms = useCallback(async () => {
+    await store.setJson(TERMS_KEY, { at: new Date().toISOString() });
+    setTermsAccepted(true);
   }, [store]);
 
   if (!backend) return <>{fallback}</>;
@@ -131,6 +160,10 @@ export function AppProvider({ children, fallback }: { children: React.ReactNode;
     lastOrigin,
     auth,
     clearLocalData,
+    onboarded,
+    completeOnboarding,
+    termsAccepted,
+    acceptTerms,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

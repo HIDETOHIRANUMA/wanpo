@@ -1,8 +1,8 @@
 import { router } from 'expo-router';
 import React, { useState } from 'react';
-import { Alert, Platform, ScrollView, Text } from 'react-native';
+import { Alert, Platform, ScrollView, Text, View } from 'react-native';
 import { useApp } from '@/state/AppContext';
-import { Button, Card, DemoBanner, Section } from '@/ui/components';
+import { Button, Card, DemoBanner, Notice, Section } from '@/ui/components';
 import { errorMessage } from '@/ui/errors';
 import { OtpLogin } from '@/ui/OtpLogin';
 import { colors, space, type } from '@/ui/theme';
@@ -21,7 +21,7 @@ function confirmDelete(): Promise<boolean> {
 
 export default function AccountScreen() {
   const { auth, backend, isDemo } = useApp();
-  const [busy, setBusy] = useState<null | 'logout' | 'delete'>(null);
+  const [busy, setBusy] = useState<null | 'logout' | 'delete' | 'unblock'>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,39 +53,70 @@ export default function AccountScreen() {
     }
   };
 
+  const unblock = async () => {
+    setBusy('unblock');
+    setError(null);
+    try {
+      const n = await backend.ugc.unblockAll();
+      setMessage(n > 0 ? `${n}人のブロックを解除しました。` : 'ブロックしている人はいません。');
+    } catch (e) {
+      setError(errorMessage(e, 'ブロックを解除できませんでした。'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <ScrollView style={{ backgroundColor: colors.bg }} contentContainerStyle={{ padding: space.lg, paddingBottom: 48 }}>
       {isDemo ? <DemoBanner /> : null}
-      <Text style={type.body}>ログインは「情報の修正を知らせる」ときだけ必要です。検索・保存・犬の条件はログインなしで使えます。</Text>
+      <Notice
+        tone="info"
+        icon="person-circle-outline"
+        title="ログインが必要なのは投稿するときだけです"
+        body="口コミ・犬の写真・情報の報告・通報に使います。検索・保存・犬の条件はログインなしで使えます。"
+      />
       {message ? (
-        <Card style={{ marginTop: space.md }}>
-          <Text style={type.body} accessibilityLiveRegion="polite">
-            {message}
-          </Text>
-        </Card>
+        <View style={{ marginTop: space.md }}>
+          <Notice tone="info" icon="checkmark-circle" title={message} />
+        </View>
       ) : null}
       {error ? (
-        <Text style={{ color: colors.bad, marginTop: space.md }} accessibilityLiveRegion="assertive">
-          {error}
-        </Text>
+        <View style={{ marginTop: space.md }}>
+          <Notice tone="bad" title={error} />
+        </View>
       ) : null}
       {auth.signedIn ? (
         <>
-          <Section title="ログイン中">
-            <Text style={type.body}>{auth.simulated ? 'デモの模擬ログイン（実際の認証ではありません）' : auth.maskedEmail}</Text>
-            <Button label="ログアウト" variant="secondary" onPress={logout} loading={busy === 'logout'} />
+          <Section title="ログイン中" icon="person-outline">
+            <Card style={{ gap: space.md }}>
+              <Text style={type.body}>{auth.simulated ? 'デモの模擬ログイン（実際の認証ではありません）' : auth.maskedEmail}</Text>
+              <Button label="ログアウト" icon="log-out-outline" variant="outline" onPress={logout} loading={busy === 'logout'} />
+            </Card>
           </Section>
-          <Section title="アカウントの削除">
-            <Text style={type.small}>サーバーで本人を確認したうえで、アカウントとあなたの報告・回答・口コミ・犬の写真を削除します。</Text>
-            <Button label="アカウントを削除" variant="danger" onPress={remove} loading={busy === 'delete'} />
+          <Section title="ブロックの解除" icon="ban-outline">
+            <Card style={{ gap: space.md }}>
+              <Text style={type.small}>ブロックした投稿者の口コミ・写真は、あなたには表示されません。すべて解除すると再び表示されます。</Text>
+              <Button label="ブロックをすべて解除" icon="refresh" variant="outline" onPress={unblock} loading={busy === 'unblock'} />
+            </Card>
+          </Section>
+          <Section title="アカウントの削除" icon="trash-outline">
+            <Card style={{ gap: space.md }}>
+              <Text style={type.small}>サーバーで本人を確認したうえで、アカウントとあなたの報告・回答・口コミ・犬の写真を削除します。</Text>
+              <Button label="アカウントを削除" icon="trash-outline" variant="danger" onPress={remove} loading={busy === 'delete'} />
+            </Card>
           </Section>
         </>
       ) : (
-        <Section title="メールでログイン">
-          <OtpLogin onSignedIn={() => setMessage(isDemo ? 'デモの模擬ログイン状態になりました。' : 'ログインしました。')} />
+        <Section title="メールでログイン" icon="mail-outline">
+          <Card>
+            <OtpLogin onSignedIn={() => setMessage(isDemo ? 'デモの模擬ログイン状態になりました。' : 'ログインしました。')} />
+          </Card>
         </Section>
       )}
-      <Button label="プライバシーについて" variant="ghost" onPress={() => router.push('/privacy')} style={{ marginTop: space.xl }} />
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: space.xl }}>
+        <Button label="プライバシーについて" icon="shield-outline" variant="ghost" size="sm" onPress={() => router.push('/privacy')} />
+        <Button label="利用規約" icon="document-text-outline" variant="ghost" size="sm" onPress={() => router.push('/terms')} />
+      </View>
     </ScrollView>
   );
 }

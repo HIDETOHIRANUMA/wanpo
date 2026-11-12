@@ -188,7 +188,7 @@ export function judgeDogFit(
     reasons.push({
       aspect: 'profile',
       result: 'needs_check',
-      message: '犬の条件が未登録です。「犬の条件」タブで登録すると判定できます',
+      message: '犬の条件が未登録です。「マイページ」で登録すると判定できます',
     });
   }
   reasons.push(judgeWeight(place.zone, profile));

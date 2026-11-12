@@ -1,16 +1,16 @@
 import * as Crypto from 'expo-crypto';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { ScrollView, Text, TextInput, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import { RepoError, REPORT_BODY_MAX, type DogOkVoteChoice, type ReportResult, type ReportTargetField, type ReportType } from '@/data/repository';
 import { TARGET_FIELDS, VOTE_CHOICES, validateReportInput } from '@/data/reportValidation';
 import type { Place } from '@/domain/types';
 import { useApp } from '@/state/AppContext';
 import type { ReportDraft } from '@/storage/reportDrafts';
-import { Button, Card, Chip, DemoBanner, ErrorState, Loading, Section } from '@/ui/components';
+import { Button, Chip, DemoBanner, EmptyState, ErrorState, Loading, Notice, Section, TextField } from '@/ui/components';
 import { errorMessage } from '@/ui/errors';
 import { OtpLogin } from '@/ui/OtpLogin';
-import { colors, MIN_TAP, radius, space, type } from '@/ui/theme';
+import { colors, space, type } from '@/ui/theme';
 
 const FIELD_LABEL: Record<ReportTargetField, string> = {
   dog_zone: '犬と過ごせる区画',
@@ -123,20 +123,13 @@ export default function ReportScreen() {
       <View style={{ flex: 1, backgroundColor: colors.bg, padding: space.lg, gap: space.md }}>
         <Stack.Screen options={{ title }} />
         {isDemo ? <DemoBanner /> : null}
-        <Card style={{ gap: space.sm }}>
-          {result.storedAt === 'server' ? (
-            <>
-              <Text style={type.heading}>受け付けました</Text>
-              <Text style={type.body}>運営が内容を確認します。確認が終わるまで、掲載情報は変わりません。内容は公開されません。</Text>
-            </>
-          ) : (
-            <>
-              <Text style={type.heading}>この端末にデモとして保存しました</Text>
-              <Text style={type.body}>デモのため送信はしていません。運営には届きません。</Text>
-            </>
-          )}
-        </Card>
-        <Button label="施設の詳細に戻る" onPress={() => router.back()} />
+        <EmptyState
+          icon="checkmark-circle"
+          title={result.storedAt === 'server' ? '受け付けました' : 'この端末にデモとして保存しました'}
+          body={result.storedAt === 'server' ? '運営が内容を確認します。確認が終わるまで、掲載情報は変わりません。内容は公開されません。' : 'デモのため送信はしていません。運営には届きません。'}
+        >
+          <Button label="施設の詳細に戻る" icon="arrow-back" onPress={() => router.back()} />
+        </EmptyState>
       </View>
     );
   }
@@ -145,13 +138,13 @@ export default function ReportScreen() {
     <ScrollView style={{ backgroundColor: colors.bg }} contentContainerStyle={{ padding: space.lg, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
       <Stack.Screen options={{ title }} />
       {isDemo ? <DemoBanner /> : null}
-      <Text style={type.heading}>{place.name}</Text>
-      <Text style={type.small}>
+      <Text style={type.title}>{place.name}</Text>
+      <Text style={[type.small, { marginTop: 4 }]}>
         送った内容は運営の確認用です。公開されず、掲載情報へ自動で反映されることもありません。送信にはメールでの確認が必要です。
       </Text>
 
       {reportType === 'dog_ok_vote' ? (
-        <Section title="このお店で、犬と過ごせましたか？">
+        <Section title="このお店で、犬と過ごせましたか？" icon="paw-outline">
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
             {VOTE_CHOICES.map((c) => (
               <Chip key={c} label={VOTE_LABEL[c]} selected={draft.voteChoice === c} onPress={() => update({ voteChoice: c })} />
@@ -159,7 +152,7 @@ export default function ReportScreen() {
           </View>
         </Section>
       ) : (
-        <Section title="対象の項目">
+        <Section title="対象の項目" icon="list-outline">
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
             {TARGET_FIELDS.map((f) => (
               <Chip key={f} label={FIELD_LABEL[f]} selected={draft.targetField === f} onPress={() => update({ targetField: f })} />
@@ -168,41 +161,33 @@ export default function ReportScreen() {
         </Section>
       )}
 
-      <Section title={reportType === 'dog_ok_vote' ? '補足（任意）' : '内容'}>
-        <TextInput
+      <Section title={reportType === 'dog_ok_vote' ? '補足（任意）' : '内容'} icon="create-outline">
+        <TextField
           value={draft.body}
           onChangeText={(t) => update({ body: t })}
           multiline
           maxLength={REPORT_BODY_MAX}
           placeholder={reportType === 'dog_ok_vote' ? '例：店内奥の席のみ案内されました' : '例：犬同伴はテラス席のみに変わっていました'}
-          placeholderTextColor={colors.textMuted}
-          style={[inputStyle, { minHeight: 120, textAlignVertical: 'top', paddingTop: space.sm }]}
           accessibilityLabel="内容"
+          helper={`${draft.body.length}/${REPORT_BODY_MAX}文字。お名前・電話番号などの個人情報は書かないでください。`}
         />
-        <Text style={type.small}>
-          {draft.body.length}/{REPORT_BODY_MAX}文字。お名前・電話番号などの個人情報は書かないでください。
-        </Text>
       </Section>
 
-      <Section title="訪問日（任意）">
-        <TextInput
+      <Section title="訪問日（任意）" icon="calendar-outline">
+        <TextField
           value={visitedText}
           onChangeText={(t) => {
             setVisitedText(t);
             update({ visitedOn: t.trim() === '' ? null : t.trim().replace(/\//g, '-') });
           }}
           placeholder="例：2026-07-15"
-          placeholderTextColor={colors.textMuted}
-          style={inputStyle}
           accessibilityLabel="訪問日（年-月-日）。任意"
+          error={errors.includes('visitedOn') || errors.includes('visitedOn_future') ? '訪問日は「2026-07-15」の形式で、今日以前の日付を入力してください' : null}
         />
-        {errors.includes('visitedOn') || errors.includes('visitedOn_future') ? (
-          <Text style={{ color: colors.bad }}>訪問日は「2026-07-15」の形式で、今日以前の日付を入力してください</Text>
-        ) : null}
       </Section>
 
       {phase === 'auth' && !auth.signedIn ? (
-        <Section title="メールで確認">
+        <Section title="メールで確認" icon="mail-outline">
           <Text style={type.small}>入力内容はこの端末に保持しています。確認が終わると送信できます。</Text>
           <OtpLogin onSignedIn={() => setPhase('form')} />
         </Section>
@@ -210,6 +195,8 @@ export default function ReportScreen() {
 
       <Button
         label={auth.signedIn ? (isDemo ? 'デモとして端末に保存' : '送信する') : 'メールで確認して送信'}
+        icon="send-outline"
+        size="lg"
         onPress={submit}
         loading={sending}
         disabled={errors.length > 0}
@@ -224,23 +211,10 @@ export default function ReportScreen() {
       />
       {sendError ? (
         <View style={{ marginTop: space.md, gap: space.sm }}>
-          <Text style={{ color: colors.bad }} accessibilityLiveRegion="assertive">
-            {sendError}
-          </Text>
-          {auth.signedIn ? <Button label="再試行" variant="secondary" onPress={submit} loading={sending} /> : null}
+          <Notice tone="bad" title={sendError} />
+          {auth.signedIn ? <Button label="再試行" icon="refresh" variant="secondary" onPress={submit} loading={sending} /> : null}
         </View>
       ) : null}
     </ScrollView>
   );
 }
-
-const inputStyle = {
-  minHeight: MIN_TAP,
-  borderWidth: 1,
-  borderColor: colors.border,
-  borderRadius: radius.md,
-  paddingHorizontal: space.md,
-  fontSize: 16,
-  color: colors.text,
-  backgroundColor: colors.surface,
-};
