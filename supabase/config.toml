@@ -1,0 +1,13 @@
+# Supabase CLI 用の最小設定（npx supabase link 後に使用）
+# 全設定は `npx supabase init` で生成されるテンプレートを参照。ここでは本アプリに必要な項目だけを置く。
+project_id = "inu-to-suzumeru"
+
+[functions.delete-account]
+# 関数内で getUser(token) により本人検証する
+verify_jwt = false
+
+[auth.email]
+enable_signup = true
+# OTP の有効期限（秒）。既定 3600
+otp_expiry = 3600
+otp_length = 6

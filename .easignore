@@ -1,0 +1,8 @@
+# .gitignore と同じだが、EAS Build で地図キー等を読むため .env は除外しない
+node_modules/
+.expo/
+dist/
+ios/
+android/
+coverage/
+supabase/.temp/

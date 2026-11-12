@@ -1,0 +1,65 @@
+[
+  {
+    "ref": "row-1",
+    "name": "（記入例）施設名",
+    "category": "cafe",
+    "address": "東京都港区（住所を記入）",
+    "area_id": "minato",
+    "lat": 35.6581,
+    "lng": 139.7516,
+    "publication_status": "draft",
+    "operating_status": "normal",
+    "zone": {
+      "name": "店内奥のテーブル席",
+      "scope": "indoor_partial",
+      "indoor_dogs": "yes",
+      "air_conditioning": "yes",
+      "weight_limit_kind": "max_kg",
+      "weight_max_kg": 10,
+      "weight_max_inclusive": true,
+      "weight_limit_text": "体重10kg以下",
+      "carry_status": "confirmed",
+      "carry_methods": ["cart", "bag"],
+      "carry_text": "カートまたはバッグに入れて入店",
+      "certificate": "required",
+      "certificate_text": "狂犬病予防注射済票",
+      "extra_requirements": [
+        { "text": "大型犬の場合はカート必須", "effect": "needs_check" },
+        { "text": "マナーベルト着用", "effect": "info" }
+      ]
+    },
+    "eligibility": "open",
+    "order_required": "yes",
+    "order_text": "1人1ドリンク以上",
+    "reservation_required": "no",
+    "fee_status": "free",
+    "water": "yes",
+    "business_hours_status": "confirmed",
+    "business_hours": {
+      "mon": ["11:00-14:00", "17:00-22:00"],
+      "tue": ["11:00-14:00", "17:00-22:00"],
+      "wed": ["closed"],
+      "thu": ["11:00-14:00", "17:00-22:00"],
+      "fri": ["11:00-14:00", "17:00-26:00"],
+      "sat": ["11:00-26:00"],
+      "sun": ["11:00-20:00"]
+    },
+    "dog_hours_mode": "custom",
+    "dog_hours": {
+      "mon": ["13:00-22:00"], "tue": ["13:00-22:00"], "wed": ["closed"], "thu": ["13:00-22:00"],
+      "fri": ["13:00-22:00"], "sat": ["13:00-22:00"], "sun": ["13:00-20:00"]
+    },
+    "exceptions": [
+      { "date": "2026-12-31", "closed": true, "note": "年末休業" },
+      { "date": "2027-01-02", "periods": ["12:00-17:00"], "note": "短縮営業" }
+    ],
+    "verifications": [
+      { "field": "indoor_dogs", "method": "phone", "verified_at": "2026-11-01", "evidence_note": "店舗へ電話で確認（店内奥の席のみ）" },
+      { "field": "air_conditioning", "method": "onsite", "verified_at": "2026-11-01", "evidence_note": "運営者が現地で確認" },
+      { "field": "dog_conditions", "method": "official_info", "verified_at": "2026-11-01", "evidence_url": "https://example.com/dog-policy" }
+    ],
+    "phone": "03-0000-0000",
+    "official_url": "https://example.com/",
+    "description": "紹介文（任意）"
+  }
+]
