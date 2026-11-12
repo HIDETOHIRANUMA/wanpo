@@ -1,6 +1,7 @@
 // アカウント削除（Supabase Edge Function / Deno）
 // - 呼び出し元のアクセストークンでサーバー側が本人を検証し、そのユーザーだけを削除する
-// - auth.users 削除で public.place_reports（本人の報告）と private.report_quota が FK の cascade で削除される
+// - 先に Storage の user-photos/{本人ID}/ にある犬の写真ファイルを全部削除する（失敗したらユーザーは消さず、再試行できるようにする）
+// - auth.users 削除で 報告・口コミ・写真の記録・通報・投稿回数 が FK の cascade で削除される
 // - 秘密鍵（service role / secret）は Edge Function の環境にのみ存在し、アプリには含めない
 //
 // デプロイ: npx supabase functions deploy delete-account
@@ -32,6 +33,9 @@ Deno.serve(async (req: Request) => {
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data.user) return json(401, { error: 'auth_required' });
 
+  const removed = await removeUserPhotos(admin, data.user.id);
+  if (!removed) return json(500, { error: 'delete_failed' });
+
   const { error: delError } = await admin.auth.admin.deleteUser(data.user.id);
   if (delError) {
     // ユーザーIDやメールはログに出さない
@@ -40,3 +44,24 @@ Deno.serve(async (req: Request) => {
   }
   return json(200, { deleted: true });
 });
+
+type Admin = ReturnType<typeof createClient>;
+
+// 本人フォルダのファイルを100件ずつ一覧して削除する
+async function removeUserPhotos(admin: Admin, userId: string): Promise<boolean> {
+  const bucket = admin.storage.from('user-photos');
+  for (let round = 0; round < 100; round++) {
+    const { data: files, error } = await bucket.list(userId, { limit: 100 });
+    if (error) {
+      console.error('delete-account: list photos failed');
+      return false;
+    }
+    if (!files || files.length === 0) return true;
+    const { error: rmError } = await bucket.remove(files.map((f) => `${userId}/${f.name}`));
+    if (rmError) {
+      console.error('delete-account: remove photos failed');
+      return false;
+    }
+  }
+  return false;
+}
