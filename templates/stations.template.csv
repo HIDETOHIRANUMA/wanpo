@@ -1,0 +1,4 @@
+id,name,area_id,line_name,operator,lat,lng
+st-umeda,梅田駅,osaka-kita,御堂筋線,大阪市高速電気軌道,34.7025,135.4996
+st-tenjin,天神駅,fukuoka-chuo,空港線,福岡市交通局,33.5913,130.3988
+st-odori,大通駅,sapporo-chuo,南北線,札幌市交通局,43.0607,141.3545
