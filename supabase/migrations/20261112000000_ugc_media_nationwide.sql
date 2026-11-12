@@ -305,6 +305,15 @@ language sql stable security definer set search_path = '' as $$
   where pl.id = any (p_place_ids[1:200]) and pl.publication_status = 'published'
 $$;
 
+-- ---------- 自分の投稿のID（投稿者IDの列を公開せずに「自分の投稿」を判別する） ----------
+create or replace function public.my_ugc_ids(p_place_id uuid)
+returns table (target_type text, id uuid)
+language sql stable security definer set search_path = '' as $$
+  select 'review', r.id from public.place_reviews r where r.place_id = p_place_id and r.author_id = auth.uid()
+  union all
+  select 'photo', f.id from public.place_photos f where f.place_id = p_place_id and f.uploader_id = auth.uid()
+$$;
+
 -- ---------- 関数の実行権限 ----------
 revoke all on function public.submit_place_review(uuid, uuid, text, text, public.review_tag[], date) from public, anon;
 revoke all on function public.delete_my_review(uuid) from public, anon;
@@ -318,6 +327,8 @@ grant execute on function public.begin_photo_upload(uuid, uuid, text) to authent
 grant execute on function public.complete_photo_upload(uuid) to authenticated;
 grant execute on function public.delete_my_photo(uuid) to authenticated;
 grant execute on function public.flag_ugc(text, uuid, text) to authenticated;
+revoke all on function public.my_ugc_ids(uuid) from public, anon;
+grant execute on function public.my_ugc_ids(uuid) to authenticated;
 revoke all on function public.place_ugc_counts(uuid[]) from public;
 grant execute on function public.place_ugc_counts(uuid[]) to anon, authenticated;
 revoke all on function private.setting_int(text, integer), private.ugc_initial_status(),

@@ -35,17 +35,17 @@ describe('報告の送信', () => {
 describe('施設の取得', () => {
   test('通信エラーはエラーとして返し、デモ施設で代用しない', async () => {
     const chain: Record<string, unknown> = {};
-    for (const m of ['select', 'eq', 'gte', 'in', 'limit', 'order']) chain[m] = () => chain;
+    for (const m of ['select', 'eq', 'gte', 'lte', 'in', 'limit', 'order']) chain[m] = () => chain;
     chain.then = (_res: unknown, rej: (e: unknown) => void) => rej(new TypeError('Network request failed'));
     const client = { from: () => chain } as unknown as SupabaseClient;
-    await expect(new SupabaseRepository(client).listPublishedPlaces()).rejects.toMatchObject({ kind: 'network' });
+    await expect(new SupabaseRepository(client).listPlacesNear({ lat: 35.6, lng: 139.7 }, 10)).rejects.toMatchObject({ kind: 'network' });
   });
   test('取得成功・0件なら正しく0件', async () => {
     const chain: Record<string, unknown> = {};
-    for (const m of ['select', 'eq', 'gte', 'in', 'limit', 'order']) chain[m] = () => chain;
+    for (const m of ['select', 'eq', 'gte', 'lte', 'in', 'limit', 'order']) chain[m] = () => chain;
     chain.then = (res: (v: unknown) => void) => res({ data: [], error: null });
     const client = { from: () => chain } as unknown as SupabaseClient;
-    expect(await new SupabaseRepository(client).listPublishedPlaces()).toEqual([]);
+    expect(await new SupabaseRepository(client).listPlacesNear({ lat: 35.6, lng: 139.7 }, 10)).toEqual([]);
     const r = await new SupabaseRepository(client).getPlacesByIds(['11111111-1111-1111-1111-111111111111']);
     expect(r).toEqual({ found: [], missingIds: ['11111111-1111-1111-1111-111111111111'] });
   });

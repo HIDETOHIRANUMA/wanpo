@@ -30,13 +30,23 @@ async function main() {
         'place_dog_zones', (select coalesce(jsonb_agg(z), '[]') from public.place_dog_zones z where z.place_id = p.id),
         'place_hours', (select coalesce(jsonb_agg(h), '[]') from public.place_hours h where h.place_id = p.id),
         'place_hour_exceptions', (select coalesce(jsonb_agg(e), '[]') from public.place_hour_exceptions e where e.place_id = p.id),
-        'place_verifications', (select coalesce(jsonb_agg(v), '[]') from public.place_verifications v where v.place_id = p.id)
+        'place_verifications', (select coalesce(jsonb_agg(v), '[]') from public.place_verifications v where v.place_id = p.id),
+        'place_media', (select coalesce(jsonb_agg(m), '[]') from public.place_media m where m.place_id = p.id),
+        'areas', (select jsonb_build_object('name', a.name, 'prefecture', a.prefecture) from public.areas a where a.id = p.area_id)
       ) as j
      from public.places p where p.id = $1`,
     [id],
   );
   const place = mapPlace(q.rows[0].j);
+  // 全国のエリア・駅の投入（テンプレート）と、範囲での取得に使う索引列
+  const geo = await client.query<{ n: string }>(`select count(*)::text as n from public.stations where line_name is not null`);
   await client.end();
+
+  assert.ok(Number(geo.rows[0].n) >= 3, '駅テンプレートが投入されている');
+  assert.equal(place.reservationUrl, 'https://example.com/reserve');
+  assert.deepEqual(place.atmosphereTags, ['明るい', 'ソファ席', '大きな窓']);
+  assert.deepEqual(place.media.map((m) => m.kind), ['exterior', 'interior'], '店舗写真は並び順どおり・再投入で重複しない');
+  assert.equal(place.areaName, '港区');
 
   assert.equal(place.verifications.length, 3, '確認記録は再投入で重複しない');
   assert.equal(place.zone.scope, 'indoor_partial');

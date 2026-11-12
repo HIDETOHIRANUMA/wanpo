@@ -4,13 +4,15 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { formatDistance } from '@/domain/geo';
 import { CATEGORY_LABEL, OPERATING_LABEL } from '@/domain/labels';
 import type { SearchResult } from '@/domain/search';
+import type { UgcCounts } from '@/domain/ugc';
 import { useApp } from '@/state/AppContext';
-import { Badge, Button, CategoryPlaceholder } from './components';
+import { Badge, Button } from './components';
+import { PlaceHero } from './PlaceVisual';
 import { availabilityBadge, baseBadge, fitBadge, freshnessText } from './status';
 import { dogConditionSummary, usageSummary, zoneSummary } from './summaries';
 import { colors, radius, space, type } from './theme';
 
-export function PlaceCard({ result, originLabel }: { result: SearchResult; originLabel: string }) {
+export function PlaceCard({ result, originLabel, counts }: { result: SearchResult; originLabel: string; counts?: UgcCounts }) {
   const { place, base, fit, freshness, availability, distanceKm } = result;
   const { isSaved, toggleSave, profile } = useApp();
   const [busy, setBusy] = useState(false);
@@ -31,20 +33,36 @@ export function PlaceCard({ result, originLabel }: { result: SearchResult; origi
         onPress={() => router.push(`/place/${place.id}`)}
         accessibilityRole="button"
         accessibilityLabel={`${place.name}の詳細を見る`}
-        style={({ pressed }) => [pressed && { opacity: 0.85 }]}
+        style={({ pressed }) => [pressed && { opacity: 0.88 }]}
       >
-        <View style={styles.header}>
-          <CategoryPlaceholder category={place.category} compact />
-          <View style={{ flex: 1 }}>
-            <Text style={type.heading}>{place.name}</Text>
-            <Text style={type.small}>
-              {CATEGORY_LABEL[place.category]}
-              {place.operatingStatus !== 'normal' ? ` ・${OPERATING_LABEL[place.operatingStatus]}` : ''}
-            </Text>
-          </View>
-        </View>
+        <PlaceHero place={place} />
+        <View style={styles.body}>
+          <Text style={type.heading}>{place.name}</Text>
+          <Text style={type.small}>
+            {place.areaName ? `${place.areaName}・` : ''}
+            {CATEGORY_LABEL[place.category]}
+            {place.operatingStatus !== 'normal' ? ` ・${OPERATING_LABEL[place.operatingStatus]}` : ''}
+            {` ・${originLabel}から直線 ${formatDistance(distanceKm)}`}
+          </Text>
 
-        <View style={styles.rows}>
+          {place.atmosphereTags.length ? (
+            <View style={styles.tags} accessibilityLabel={`雰囲気：${place.atmosphereTags.join('、')}`}>
+              {place.atmosphereTags.map((t) => (
+                <Text key={t} style={styles.tag}>
+                  {t}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+
+          <View style={styles.meta}>
+            <Text style={styles.metaText}>💬 口コミ {counts?.reviewCount ?? 0}件</Text>
+            <Text style={styles.metaText}>🐶 犬の写真 {counts?.photoCount ?? 0}枚</Text>
+            {place.reservationUrl ? <Text style={[styles.metaText, styles.reserve]}>予約ページあり</Text> : null}
+          </View>
+
+          <View style={styles.divider} />
+
           <Text style={type.body}>
             <Text style={type.label}>犬と過ごせる区画　</Text>
             {zoneSummary(place.zone)}
@@ -63,18 +81,11 @@ export function PlaceCard({ result, originLabel }: { result: SearchResult; origi
             <Badge info={freshnessText(freshness)} />
             <Badge info={availabilityBadge(availability)} />
           </View>
-          <Text style={type.small}>
-            {originLabel}から直線 {formatDistance(distanceKm)}
-          </Text>
         </View>
       </Pressable>
-      <Button
-        label={saved ? '保存済み（タップで解除）' : '保存する'}
-        variant={saved ? 'secondary' : 'primary'}
-        onPress={onSave}
-        loading={busy}
-        style={{ marginTop: space.md }}
-      />
+      <View style={{ paddingHorizontal: space.lg, paddingBottom: space.lg }}>
+        <Button label={saved ? '保存済み（タップで解除）' : '保存する'} variant={saved ? 'secondary' : 'primary'} onPress={onSave} loading={busy} />
+      </View>
     </View>
   );
 }
@@ -85,11 +96,24 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: space.lg,
     marginHorizontal: space.lg,
-    marginBottom: space.md,
+    marginBottom: space.lg,
+    overflow: 'hidden',
   },
-  header: { flexDirection: 'row', gap: space.md, alignItems: 'flex-start' },
-  rows: { marginTop: space.md, gap: space.sm },
+  body: { padding: space.lg, gap: space.sm },
+  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tag: {
+    fontSize: 13,
+    color: colors.text,
+    backgroundColor: colors.mint,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    overflow: 'hidden',
+  },
+  meta: { flexDirection: 'row', flexWrap: 'wrap', gap: space.md, alignItems: 'center' },
+  metaText: { fontSize: 13, color: colors.textMuted, fontWeight: '600' },
+  reserve: { color: colors.primary },
+  divider: { height: 1, backgroundColor: colors.border, marginVertical: 2 },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
 });

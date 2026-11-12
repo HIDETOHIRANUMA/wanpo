@@ -23,7 +23,12 @@ export class SavedPlacesStore {
   constructor(private store: LocalStore) {}
 
   async list(): Promise<SavedEntry[]> {
-    return (await this.store.getJson<SavedEntry[]>(KEY)) ?? [];
+    const list = (await this.store.getJson<SavedEntry[]>(KEY)) ?? [];
+    // 以前の版で保存した情報には写真・雰囲気タグの項目がないため補う
+    return list.map((e) => ({
+      ...e,
+      snapshot: { ...e.snapshot, atmosphereTags: e.snapshot.atmosphereTags ?? [], media: e.snapshot.media ?? [] },
+    }));
   }
 
   async isSaved(placeId: string): Promise<boolean> {

@@ -75,7 +75,62 @@ where r.review_status = 'pending' order by r.received_at;
   ```
 - 「再確認をおすすめ」の日数はアプリの `EXPO_PUBLIC_STALE_AFTER_DAYS`（既定90。運用上の目安）。
 
-## 7. エリアの追加
+## 7. エリア・駅の追加（全国展開）
 
-`public.areas` と `public.stations` に行を追加します（`supabase/seed/areas_stations.sql` と同じ形式）。投入スクリプトは DB の `areas` を参照して未登録エリアを拒否します。
-アプリの「対象エリア全体」の基準点（`src/data/demo/areas.ts` の `ALL_AREA_ORIGIN`）は3区の中心付近で固定しているため、大きく範囲を広げる場合は見直してください。
+市区町村（`public.areas`）と駅（`public.stations`）は CSV から投入します。
+
+```bash
+npm run import:geo -- --areas data/areas.csv --stations data/stations.csv --check   # 検証だけ
+npm run import:geo -- --areas data/areas.csv --stations data/stations.csv --sql out/geo.sql
+DATABASE_URL='postgresql://...' npm run import:geo -- --areas data/areas.csv --stations data/stations.csv --db
+```
+
+- 書式：`templates/areas.template.csv`（`id,name,prefecture,prefecture_code,municipality_code,lat,lng`）、`templates/stations.template.csv`（`id,name,area_id,line_name,operator,lat,lng`）。
+- 元データの例：市区町村は総務省「全国地方公共団体コード」と代表点の座標、駅は国土数値情報「鉄道データ（N02）」の駅の位置。**利用規約と出典表記の条件は、使う時点の最新の規約を確認してください（未確認）。** N02 の駅は線形データなので、代表点（中点など）を座標にし、所在の市区町村を `area_id` に入れた CSV に変換してから投入します。
+- アプリは「都道府県 → 市区町村」と「駅名検索（最大30件）」で基準点を選び、基準点から選んだ距離の範囲にある施設だけを取得します。全国の施設を一度に読み込みません。
+- アプリは前回の基準点（エリア・駅・地図の中心）を端末に覚え、初回は「東京都心（港区周辺）」から始まります（`src/data/demo/areas.ts` の `DEFAULT_ORIGIN`）。
+
+## 8. 店舗写真・予約ページ・雰囲気タグ
+
+- 店舗写真は `public.place_media`（`kind`：exterior 外観 / interior 店内 / atmosphere 雰囲気 / dog_area 犬と過ごせる席）。**掲載許諾などの権利（`rights`）と出典（`credit`）が必須**です。店舗から提供を受けた写真、または運営が撮影し店舗の許可を得た写真だけを登録し、他サービス・SNSの写真は使わないでください。
+- 一覧のカードは「外観 → 犬と過ごせる席 → 店内 → 雰囲気」の順で1枚を表示します。写真がない施設はイメージイラスト（「イメージ（写真未登録）」と表示）になります。
+- 予約ページは `places.reservation_url`（https のみ）。店舗の公式予約ページか、予約サービス上の店舗ページを登録します。アフィリエイト等の契約が必要なリンクは対象外です。
+- 雰囲気タグは `places.atmosphere_tags`（最大6個・1つ20文字まで。例「明るい」「ソファ席」）。
+- 施設の投入（`import:places`）で `reservation_url`、`atmosphere_tags`（CSV は `|` 区切り）、`media`（JSON の配列）を指定できます（`templates/places.template.*`）。
+
+## 9. 口コミ・犬の写真の管理
+
+投稿はすぐ公開され、通報が一定数たまると自動で非表示になります。口コミ・写真は施設の判定（室内同伴・冷房・犬の条件）には使いません。
+
+- 最近の投稿を見る：
+  ```sql
+  select id, place_id, nickname, left(body, 60) as body, status, published_at from public.place_reviews order by created_at desc limit 50;
+  select id, place_id, storage_path, caption, status, uploaded, published_at from public.place_photos order by created_at desc limit 50;
+  ```
+- 通報の多い投稿：
+  ```sql
+  select target_type, target_id, count(*) as flags, array_agg(distinct reason) as reasons
+  from private.ugc_flags group by 1, 2 order by flags desc limit 50;
+  ```
+- 非表示にする／戻す（`hidden` は通報や運営判断、`rejected` は掲載見送り、`approved` は公開）：
+  ```sql
+  update public.place_reviews set status = 'hidden' where id = '...';
+  update public.place_photos  set status = 'approved', published_at = coalesce(published_at, now()) where id = '...';
+  ```
+  写真ファイルそのものを消す場合は、Studio の Storage → `user-photos` から該当ファイル（`{投稿者ID}/{写真ID}.jpg`）を削除し、行も削除します。
+- 投稿者の特定が必要な場合（法的な要請など）だけ、Studio で `author_id` / `uploader_id` を参照します。アプリの公開レスポンスには含まれません。
+
+### 設定（`private.app_settings`）
+
+| key | 既定 | 意味 |
+| --- | --- | --- |
+| `ugc_publish_mode` | `"immediate"` | `"immediate"`：すぐ公開／`"review_first"`：運営が `approved` にするまで非公開 |
+| `ugc_auto_hide_flags` | `3` | この人数から通報されたら自動で非表示（同じ人の重複は数えない） |
+| `review_daily_limit` | `5` | 口コミの1日の上限（1人あたり・日本時間） |
+| `photo_daily_limit` | `5` | 写真の1日の上限 |
+| `flag_daily_limit` | `20` | 通報の1日の上限 |
+
+```sql
+update private.app_settings set value = '"review_first"' where key = 'ugc_publish_mode';
+update private.app_settings set value = '5' where key = 'ugc_auto_hide_flags';
+```

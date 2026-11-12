@@ -1,4 +1,14 @@
+import type { LatLng } from '@/domain/geo';
 import type { Area, Place, Station } from '@/domain/types';
+import type {
+  FlagReason,
+  PhotoInput,
+  Review,
+  ReviewInput,
+  UgcCounts,
+  UgcSubmitResult,
+  UserPhoto,
+} from '@/domain/ugc';
 
 export type DataMode = 'demo' | 'production';
 
@@ -32,10 +42,14 @@ export interface PlacesByIdsResult {
 /** 画面から見たデータ取得の窓口。DemoRepository と SupabaseRepository が同じ形で実装する */
 export interface PlaceRepository {
   readonly mode: DataMode;
-  listAreas(): Promise<Area[]>;
-  listStations(): Promise<Station[]>;
-  /** 公開済み施設。初期版は対象エリアの全件（件数が増えたら範囲指定に拡張） */
-  listPublishedPlaces(): Promise<Place[]>;
+  /** 市区町村（エリア）。都道府県コードを指定するとその都道府県だけ */
+  listAreas(prefectureCode?: number): Promise<Area[]>;
+  /** 駅名の前方・部分一致検索（最大30件） */
+  searchStations(query: string): Promise<Station[]>;
+  /** 基準点から半径 km の範囲にある公開済み施設（全国。範囲外は返さない） */
+  listPlacesNear(center: LatLng, radiusKm: number): Promise<Place[]>;
+  /** 一覧用の公開中の口コミ・写真の件数 */
+  getUgcCounts(placeIds: string[]): Promise<Record<string, UgcCounts>>;
   getPlace(id: string): Promise<Place | null>;
   getPlacesByIds(ids: string[]): Promise<PlacesByIdsResult>;
 }
@@ -91,7 +105,7 @@ export interface AuthService {
   sendOtp(email: string): Promise<void>;
   verifyOtp(email: string, code: string): Promise<void>;
   signOut(): Promise<void>;
-  /** サーバー側で本人確認のうえ Auth ユーザーと本人の報告を削除する */
+  /** サーバー側で本人確認のうえ Auth ユーザーと本人の報告・口コミ・写真を削除する */
   deleteAccount(): Promise<void>;
 }
 
@@ -99,11 +113,24 @@ export interface ReportService {
   submit(input: ReportInput): Promise<ReportResult>;
 }
 
+/** 口コミ・犬の写真。投稿はログイン必須。閲覧はログイン不要 */
+export interface UgcService {
+  /** 公開中の口コミ（新しい順）。ログイン中は自分の確認待ち・非表示の投稿も mine: true で含む */
+  listReviews(placeId: string): Promise<Review[]>;
+  listPhotos(placeId: string): Promise<UserPhoto[]>;
+  submitReview(input: ReviewInput): Promise<UgcSubmitResult>;
+  submitPhoto(input: PhotoInput): Promise<UgcSubmitResult>;
+  deleteReview(id: string): Promise<void>;
+  deletePhoto(photo: UserPhoto): Promise<void>;
+  flag(target: 'review' | 'photo', id: string, reason: FlagReason): Promise<void>;
+}
+
 export interface Backend {
   mode: DataMode;
   places: PlaceRepository;
   auth: AuthService;
   reports: ReportService;
+  ugc: UgcService;
 }
 
 export function maskEmail(email: string | null | undefined): string | null {

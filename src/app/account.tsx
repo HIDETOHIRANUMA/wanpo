@@ -9,7 +9,7 @@ import { colors, space, type } from '@/ui/theme';
 
 function confirmDelete(): Promise<boolean> {
   const msg =
-    'アカウントと、あなたが送った報告・回答をサーバーから削除します。元に戻せません。端末に保存した施設と犬の条件は残ります（別途「この端末のデータを削除」で消せます）。';
+    'アカウントと、あなたが送った報告・回答・口コミ・犬の写真をサーバーから削除します。元に戻せません。端末に保存した施設と犬の条件は残ります（別途「この端末のデータを削除」で消せます）。';
   if (Platform.OS === 'web') return Promise.resolve(globalThis.confirm?.(msg) ?? false);
   return new Promise((resolve) =>
     Alert.alert('アカウントを削除', msg, [
@@ -45,7 +45,7 @@ export default function AccountScreen() {
     try {
       // サーバー側で本人確認・削除が成功したときだけ「削除しました」と表示する
       await backend.auth.deleteAccount();
-      setMessage(isDemo ? 'デモの模擬アカウントと端末内のデモ報告を削除しました（サーバーのアカウントはありません）。' : 'アカウントと報告を削除しました。');
+      setMessage(isDemo ? 'デモの模擬アカウントと端末内のデモ報告・口コミ・写真を削除しました（サーバーのアカウントはありません）。' : 'アカウントと報告・口コミ・写真を削除しました。');
     } catch (e) {
       setError(errorMessage(e, 'アカウントを削除できませんでした。削除は完了していません。'));
     } finally {
@@ -76,7 +76,7 @@ export default function AccountScreen() {
             <Button label="ログアウト" variant="secondary" onPress={logout} loading={busy === 'logout'} />
           </Section>
           <Section title="アカウントの削除">
-            <Text style={type.small}>サーバーで本人を確認したうえで、アカウントとあなたの報告・回答を削除します。</Text>
+            <Text style={type.small}>サーバーで本人を確認したうえで、アカウントとあなたの報告・回答・口コミ・犬の写真を削除します。</Text>
             <Button label="アカウントを削除" variant="danger" onPress={remove} loading={busy === 'delete'} />
           </Section>
         </>

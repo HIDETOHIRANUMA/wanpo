@@ -2,7 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { AppState, Platform } from 'react-native';
 import { previousDate, toJst } from '@/domain/hours';
+import { boundingBox, type LatLng } from '@/domain/geo';
 import type { Area, Place, Station } from '@/domain/types';
+import type { FlagReason, PhotoInput, Review, ReviewInput, UgcCounts, UgcStatus, UgcSubmitResult, UserPhoto } from '@/domain/ugc';
+import { base64ToArrayBuffer } from '../base64';
 import {
   maskEmail,
   RepoError,
@@ -14,15 +17,21 @@ import {
   type ReportInput,
   type ReportResult,
   type ReportService,
+  type UgcService,
 } from '../repository';
-import type { AreaRow, PlaceRow, StationRow } from './dbTypes';
-import { mapPlace } from './mappers';
+import type { AreaRow, PhotoRow, PlaceRow, ReviewRow, StationRow } from './dbTypes';
+import { mapPlace, mapReview } from './mappers';
+
+export const USER_PHOTO_BUCKET = 'user-photos';
+/** 署名URLの有効期限（秒）。期限後は画面の再読み込みで取り直す */
+const SIGNED_URL_TTL = 3600;
 
 const PLACE_SELECT =
   'id,name,category,address,area_id,lat,lng,timezone,publication_status,operating_status,' +
   'eligibility,eligibility_text,order_required,order_text,reservation_required,reservation_text,' +
   'fee_status,fee_text,water,business_hours_status,dog_hours_mode,phone,official_url,photo_url,' +
-  'photo_rights,photo_credit,description,created_at,updated_at,' +
+  'photo_rights,photo_credit,description,reservation_url,atmosphere_tags,created_at,updated_at,' +
+  'areas(name,prefecture),place_media(id,url,kind,caption,rights,credit,sort),' +
   'place_dog_zones(*),place_hours(schedule,weekday,open_minute,close_minute),' +
   'place_hour_exceptions(schedule,date,is_closed,open_minute,close_minute,note),' +
   'place_verifications(id,field,method,verified_at,evidence_url,evidence_note)';
@@ -80,26 +89,62 @@ export class SupabaseRepository implements PlaceRepository {
     return previousDate(toJst(new Date()).date);
   }
 
-  async listAreas(): Promise<Area[]> {
-    const rows = await this.run<AreaRow[]>(this.client.from('areas').select('id,name,prefecture,lat,lng').order('id'));
-    return rows.map((r) => ({ id: r.id, name: r.name, prefecture: r.prefecture, lat: r.lat, lng: r.lng }));
+  async listAreas(prefectureCode?: number): Promise<Area[]> {
+    let q = this.client.from('areas').select('id,name,prefecture,prefecture_code,lat,lng');
+    if (prefectureCode) q = q.eq('prefecture_code', prefectureCode);
+    const rows = await this.run<AreaRow[]>(q.order('municipality_code', { nullsFirst: false }).order('id').limit(400));
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      prefecture: r.prefecture,
+      prefectureCode: r.prefecture_code ?? undefined,
+      lat: r.lat,
+      lng: r.lng,
+    }));
   }
 
-  async listStations(): Promise<Station[]> {
-    const rows = await this.run<StationRow[]>(this.client.from('stations').select('id,name,area_id,lat,lng').order('name'));
-    return rows.map((r) => ({ id: r.id, name: r.name, areaId: r.area_id, lat: r.lat, lng: r.lng }));
+  async searchStations(query: string): Promise<Station[]> {
+    // PostgREST のパターン文字・区切り文字は取り除く
+    const q = query.replace(/[%_\\,()*]/g, '').replace(/駅$/, '').trim().slice(0, 20);
+    if (!q) return [];
+    const rows = await this.run<StationRow[]>(
+      this.client.from('stations').select('id,name,area_id,line_name,operator,lat,lng').ilike('name', `%${q}%`).order('name').limit(30),
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      areaId: r.area_id,
+      lineName: r.line_name ?? undefined,
+      operator: r.operator ?? undefined,
+      lat: r.lat,
+      lng: r.lng,
+    }));
   }
 
-  async listPublishedPlaces(): Promise<Place[]> {
+  async listPlacesNear(center: LatLng, radiusKm: number): Promise<Place[]> {
+    const b = boundingBox(center, radiusKm);
     const rows = await this.run<PlaceRow[]>(
       this.client
         .from('places')
         .select(PLACE_SELECT)
         .eq('publication_status', 'published')
+        .gte('lat', b.minLat)
+        .lte('lat', b.maxLat)
+        .gte('lng', b.minLng)
+        .lte('lng', b.maxLng)
         .gte('place_hour_exceptions.date', this.exceptionFrom())
-        .limit(1000) as unknown as PromiseLike<{ data: PlaceRow[] | null; error: unknown }>,
+        .limit(500) as unknown as PromiseLike<{ data: PlaceRow[] | null; error: unknown }>,
     );
     return rows.map(mapPlace);
+  }
+
+  async getUgcCounts(placeIds: string[]): Promise<Record<string, UgcCounts>> {
+    const ids = placeIds.filter((id) => /^[0-9a-f-]{36}$/i.test(id)).slice(0, 200);
+    if (ids.length === 0) return {};
+    const rows = await this.run<{ place_id: string; review_count: number; photo_count: number }[]>(
+      this.client.rpc('place_ugc_counts', { p_place_ids: ids }) as unknown as PromiseLike<{ data: never; error: unknown }>,
+    );
+    return Object.fromEntries(rows.map((r) => [r.place_id, { reviewCount: r.review_count, photoCount: r.photo_count }]));
   }
 
   async getPlace(id: string): Promise<Place | null> {
@@ -222,6 +267,155 @@ export class SupabaseReports implements ReportService {
   }
 }
 
+const REVIEW_PUBLIC_COLS = 'id,place_id,nickname,body,tags,visited_on,published_at';
+const PHOTO_PUBLIC_COLS = 'id,place_id,storage_path,caption,published_at';
+
+export class SupabaseUgc implements UgcService {
+  constructor(private client: SupabaseClient) {}
+
+  private async call<T>(fn: () => PromiseLike<{ data: T | null; error: unknown }>): Promise<T> {
+    let res: { data: T | null; error: unknown };
+    try {
+      res = await fn();
+    } catch (e) {
+      throw toRepoError(e);
+    }
+    if (res.error) throw toRepoError(res.error);
+    return res.data as T;
+  }
+
+  private async signedIn(): Promise<boolean> {
+    const { data } = await this.client.auth.getSession();
+    return !!data.session;
+  }
+
+  /** 自分の投稿ID（投稿者IDの列は公開されないため、専用の関数で照会する） */
+  private async myIds(placeId: string): Promise<Set<string>> {
+    if (!(await this.signedIn())) return new Set();
+    const rows = await this.call<{ target_type: string; id: string }[]>(() => this.client.rpc('my_ugc_ids', { p_place_id: placeId }));
+    return new Set(rows.map((r) => r.id));
+  }
+
+  async listReviews(placeId: string): Promise<Review[]> {
+    const signedIn = await this.signedIn();
+    const [rows, mine] = await Promise.all([
+      this.call<ReviewRow[]>(() =>
+        this.client
+          .from('place_reviews')
+          .select(signedIn ? `${REVIEW_PUBLIC_COLS},status` : REVIEW_PUBLIC_COLS)
+          .eq('place_id', placeId)
+          .order('published_at', { ascending: false, nullsFirst: true })
+          .limit(50) as unknown as PromiseLike<{ data: ReviewRow[] | null; error: unknown }>,
+      ),
+      this.myIds(placeId),
+    ]);
+    return rows.map((r) => mapReview(r, mine.has(r.id)));
+  }
+
+  async listPhotos(placeId: string): Promise<UserPhoto[]> {
+    const signedIn = await this.signedIn();
+    const [rows, mine] = await Promise.all([
+      this.call<PhotoRow[]>(() =>
+        this.client
+          .from('place_photos')
+          .select(signedIn ? `${PHOTO_PUBLIC_COLS},status,uploaded` : PHOTO_PUBLIC_COLS)
+          .eq('place_id', placeId)
+          .order('published_at', { ascending: false, nullsFirst: true })
+          .limit(30) as unknown as PromiseLike<{ data: (PhotoRow & { uploaded?: boolean })[] | null; error: unknown }>,
+      ),
+      this.myIds(placeId),
+    ]);
+    const visible = (rows as (PhotoRow & { uploaded?: boolean })[]).filter((r) => r.uploaded !== false);
+    if (visible.length === 0) return [];
+    // 非公開バケットなので期限つきの署名URLで表示する（Storage の権限で公開中か本人の写真だけ発行される）
+    const signed = await this.call<{ path: string | null; signedUrl: string; error: string | null }[]>(() =>
+      this.client.storage.from(USER_PHOTO_BUCKET).createSignedUrls(
+        visible.map((r) => r.storage_path),
+        SIGNED_URL_TTL,
+      ) as unknown as PromiseLike<{ data: never; error: unknown }>,
+    );
+    const urlByPath = new Map(signed.filter((x) => !x.error && x.signedUrl && x.path).map((x) => [x.path as string, x.signedUrl]));
+    return visible
+      .filter((r) => urlByPath.has(r.storage_path))
+      .map((r) => ({
+        id: r.id,
+        placeId: r.place_id,
+        url: urlByPath.get(r.storage_path)!,
+        caption: r.caption,
+        publishedAt: r.published_at,
+        mine: mine.has(r.id),
+        status: (r.status ?? 'approved') as UgcStatus,
+        storagePath: r.storage_path,
+      }));
+  }
+
+  private async ownStatus(table: 'place_reviews' | 'place_photos', id: string): Promise<UgcStatus> {
+    const rows = await this.call<{ status: UgcStatus }[]>(
+      () => this.client.from(table).select('status').eq('id', id).limit(1) as unknown as PromiseLike<{ data: never; error: unknown }>,
+    );
+    return rows[0]?.status ?? 'pending';
+  }
+
+  async submitReview(i: ReviewInput): Promise<UgcSubmitResult> {
+    const id = await this.call<string>(() =>
+      this.client.rpc('submit_place_review', {
+        p_request_id: i.requestId,
+        p_place_id: i.placeId,
+        p_nickname: i.nickname,
+        p_body: i.body,
+        p_tags: i.tags,
+        p_visited_on: i.visitedOn,
+      }),
+    );
+    if (typeof id !== 'string') throw new RepoError('server', 'no id');
+    // 状態の取得に失敗しても投稿自体は受付済み
+    const status = await this.ownStatus('place_reviews', id).catch(() => 'pending' as UgcStatus);
+    return { id, status, storedAt: 'server' };
+  }
+
+  async submitPhoto(i: PhotoInput): Promise<UgcSubmitResult> {
+    if (!i.image.base64) throw new RepoError('validation', 'image');
+    // 1) 投稿枠を確保（回数制限・公開施設かの確認はサーバー側）
+    const slot = await this.call<{ photo_id: string; storage_path: string }[]>(() =>
+      this.client.rpc('begin_photo_upload', { p_request_id: i.requestId, p_place_id: i.placeId, p_caption: i.caption }),
+    );
+    const s = slot[0];
+    if (!s) throw new RepoError('server', 'no slot');
+    // 2) Storage の本人フォルダへアップロード（同じ枠への再送は「既にある」を成功とみなす）
+    const body = base64ToArrayBuffer(i.image.base64);
+    let up: { error: { message?: string; statusCode?: string } | null };
+    try {
+      up = (await this.client.storage
+        .from(USER_PHOTO_BUCKET)
+        .upload(s.storage_path, body, { contentType: 'image/jpeg', upsert: false })) as typeof up;
+    } catch (e) {
+      throw toRepoError(e);
+    }
+    if (up.error && !(up.error.statusCode === '409' || /already exists|Duplicate/i.test(up.error.message ?? ''))) {
+      throw toRepoError(up.error);
+    }
+    // 3) 完了（ファイルの存在をサーバーが確認してから公開状態にする）
+    const status = await this.call<UgcStatus>(() => this.client.rpc('complete_photo_upload', { p_photo_id: s.photo_id }));
+    return { id: s.photo_id, status, storedAt: 'server' };
+  }
+
+  async deleteReview(id: string): Promise<void> {
+    await this.call<boolean>(() => this.client.rpc('delete_my_review', { p_id: id }));
+  }
+
+  async deletePhoto(photo: UserPhoto): Promise<void> {
+    // ファイルを先に消し、成功したら記録を消す（記録だけ残った場合は再試行で消せる）
+    await this.call<unknown>(
+      () => this.client.storage.from(USER_PHOTO_BUCKET).remove([photo.storagePath]) as unknown as PromiseLike<{ data: unknown; error: unknown }>,
+    );
+    await this.call<boolean>(() => this.client.rpc('delete_my_photo', { p_id: photo.id }));
+  }
+
+  async flag(target: 'review' | 'photo', id: string, reason: FlagReason): Promise<void> {
+    await this.call<unknown>(() => this.client.rpc('flag_ugc', { p_target_type: target, p_target_id: id, p_reason: reason }));
+  }
+}
+
 export function createSupabaseBackend(url: string, key: string): Backend {
   const client = createSupabaseClient(url, key);
   return {
@@ -229,6 +423,7 @@ export function createSupabaseBackend(url: string, key: string): Backend {
     places: new SupabaseRepository(client),
     auth: new SupabaseAuth(client),
     reports: new SupabaseReports(client),
+    ugc: new SupabaseUgc(client),
   };
 }
 

@@ -6,7 +6,9 @@ import { createSupabaseBackend } from '@/data/supabase/SupabaseBackend';
 import type { DogProfile, Place } from '@/domain/types';
 import { DogProfileStore } from '@/storage/dogProfile';
 import { LocalStore } from '@/storage/localStore';
+import { LastOriginStore } from '@/storage/lastOrigin';
 import { ReportDraftStore } from '@/storage/reportDrafts';
+import { ReviewDraftStore } from '@/storage/ugcDrafts';
 import { SavedPlacesStore, type SavedEntry } from '@/storage/savedPlaces';
 
 interface AppContextValue {
@@ -22,6 +24,8 @@ interface AppContextValue {
   savedStore: SavedPlacesStore;
   reloadSaved(): Promise<void>;
   drafts: ReportDraftStore;
+  reviewDrafts: ReviewDraftStore;
+  lastOrigin: LastOriginStore;
   auth: AuthState;
   clearLocalData(): Promise<void>;
 }
@@ -47,6 +51,8 @@ export function AppProvider({ children, fallback }: { children: React.ReactNode;
   const profileStore = useMemo(() => new DogProfileStore(store), [store]);
   const savedStore = useMemo(() => new SavedPlacesStore(store), [store]);
   const drafts = useMemo(() => new ReportDraftStore(store), [store]);
+  const reviewDrafts = useMemo(() => new ReviewDraftStore(store), [store]);
+  const lastOrigin = useMemo(() => new LastOriginStore(store), [store]);
 
   const [ready, setReady] = useState(false);
   const [profile, setProfile] = useState<DogProfile | null>(null);
@@ -121,6 +127,8 @@ export function AppProvider({ children, fallback }: { children: React.ReactNode;
     savedStore,
     reloadSaved,
     drafts,
+    reviewDrafts,
+    lastOrigin,
     auth,
     clearLocalData,
   };

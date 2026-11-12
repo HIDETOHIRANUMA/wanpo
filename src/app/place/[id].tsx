@@ -1,6 +1,6 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { RepoError } from '@/data/repository';
 import { validateHttpsUrl } from '@/domain/contact';
 import { contactActions } from '@/ui/contactPolicy';
@@ -11,7 +11,9 @@ import type { Place, Schedule, Weekday } from '@/domain/types';
 import { isStale, keyFreshness, latestVerification, formatJstDate, formatJstDateTime } from '@/domain/verification';
 import { KEY_VERIFICATION_FIELDS } from '@/domain/types';
 import { useApp } from '@/state/AppContext';
-import { Badge, Button, Card, CategoryPlaceholder, DemoBanner, ErrorState, KV, Loading, Section } from '@/ui/components';
+import { Badge, Button, Card, DemoBanner, ErrorState, KV, Loading, Section } from '@/ui/components';
+import { MediaGallery, PlaceHero } from '@/ui/PlaceVisual';
+import { UgcSection } from '@/ui/UgcSection';
 import { errorMessage } from '@/ui/errors';
 import { availabilityBadge, baseBadge, fitBadge, freshnessText } from '@/ui/status';
 import { carryText, certificateText, eligibilityText, feeText, orderText, reservationText, waterText, weightText, zoneSummary } from '@/ui/summaries';
@@ -164,16 +166,32 @@ function Detail({
       <Text style={type.small}>
         {CATEGORY_LABEL[place.category]} ・{OPERATING_LABEL[place.operatingStatus]}
       </Text>
-      <View style={{ marginTop: space.md }}>
-        {place.photoUrl ? (
-          <View>
-            <Image source={{ uri: place.photoUrl }} style={styles.photo} accessibilityLabel={`${place.name}の写真`} />
-            {place.photoCredit ? <Text style={type.small}>写真：{place.photoCredit}</Text> : null}
-          </View>
-        ) : (
-          <CategoryPlaceholder category={place.category} />
-        )}
+      <View style={{ marginTop: space.md, borderRadius: 14, overflow: 'hidden' }}>
+        <PlaceHero place={place} height={200} rounded={false} />
       </View>
+      {place.media.length > 1 ? (
+        <View style={{ marginTop: space.md }}>
+          <MediaGallery media={place.media} />
+        </View>
+      ) : null}
+      {place.atmosphereTags.length ? (
+        <View style={styles.tags} accessibilityLabel={`雰囲気：${place.atmosphereTags.join('、')}`}>
+          {place.atmosphereTags.map((t) => (
+            <Text key={t} style={styles.tag}>
+              {t}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+      {place.reservationUrl ? (
+        <Button
+          label="予約ページを開く"
+          onPress={actions.reservationUrl ? () => open(actions.reservationUrl!) : undefined}
+          disabledReason={contactBlocked ?? undefined}
+          accessibilityHint="お店の予約ページをブラウザで開きます"
+          style={{ marginTop: space.md }}
+        />
+      ) : null}
 
       {/* 2. 犬と過ごせる区画 */}
       <Section title="犬と過ごせる区画">
@@ -287,6 +305,17 @@ function Detail({
           onPress={actions.officialUrl ? () => open(actions.officialUrl!) : undefined}
           disabledReason={contactBlocked ?? (!actions.officialUrl ? '公式サイトは掲載されていません' : undefined)}
         />
+        {place.reservationUrl ? (
+          <Button
+            label="予約ページを開く"
+            variant="secondary"
+            onPress={actions.reservationUrl ? () => open(actions.reservationUrl!) : undefined}
+            disabledReason={contactBlocked ?? undefined}
+          />
+        ) : null}
+        {place.reservationUrl ? (
+          <Text style={type.small}>空席・予約の可否は予約ページでご確認ください。犬連れであることを予約時に伝えるのがおすすめです。</Text>
+        ) : null}
         <Button
           label="経路を見る（地図アプリ）"
           variant="secondary"
@@ -309,6 +338,9 @@ function Detail({
         />
         <Text style={type.small}>報告・回答は運営が確認してから掲載に反映するかを判断します。公開されたり、自動で反映されたりはしません。</Text>
       </Section>
+
+      {/* 9. 利用者の投稿 */}
+      <UgcSection placeId={place.id} canPost={src.kind === 'live'} />
     </ScrollView>
   );
 }
@@ -331,5 +363,6 @@ function HoursTable({ label, schedule, now }: { label: string; schedule: Schedul
 
 const styles = StyleSheet.create({
   cache: { backgroundColor: colors.warnBg, padding: space.md, borderRadius: 8, marginBottom: space.md, gap: 2 },
-  photo: { width: '100%', height: 180, borderRadius: 10, backgroundColor: colors.mint },
+  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: space.md },
+  tag: { fontSize: 13, color: colors.text, backgroundColor: colors.mint, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3, overflow: 'hidden' },
 });

@@ -31,6 +31,8 @@ export function makePlace(o: {
     lat: o.lat ?? 35.65,
     lng: o.lng ?? 139.74,
     timezone: 'Asia/Tokyo',
+    atmosphereTags: [],
+    media: [],
     publicationStatus: 'published',
     operatingStatus: 'normal',
     zone: {

@@ -22,3 +22,8 @@ insert into public.stations (id, name, area_id, lat, lng) values
   ('st-omotesando', '表参道駅', 'minato', 35.6652, 139.7123),
   ('st-yoyogiuehara', '代々木上原駅', 'shibuya', 35.6690, 139.6797)
 on conflict (id) do update set name = excluded.name, area_id = excluded.area_id, lat = excluded.lat, lng = excluded.lng;
+
+-- 全国対応：都道府県コード・市区町村コード（全国地方公共団体コードの先頭5桁）
+update public.areas set prefecture_code = 13, municipality_code = '13109' where id = 'shinagawa';
+update public.areas set prefecture_code = 13, municipality_code = '13103' where id = 'minato';
+update public.areas set prefecture_code = 13, municipality_code = '13113' where id = 'shibuya';

@@ -155,8 +155,14 @@ export interface Place {
   verifications: Verification[];
   phone?: string;
   officialUrl?: string;
-  photoUrl?: string;
-  photoCredit?: string;
+  /** 予約ページ（https のみ）。店舗の公式予約ページや予約サービスの店舗ページ */
+  reservationUrl?: string;
+  /** 雰囲気タグ（運営が登録。例「明るい」「ソファ席」）。最大6個 */
+  atmosphereTags: string[];
+  /** 運営が権利を確認して登録した店舗写真（外観・店内など）。並び順どおり */
+  media: PlaceMedia[];
+  /** 市区町村名（一覧表示・検索用） */
+  areaName?: string;
   description?: string;
   /** デモデータか。デモでは外部連絡・経路を無効にする */
   isDemo: boolean;
@@ -164,10 +170,24 @@ export interface Place {
   updatedAt: string; // 店舗情報の更新。確認日ではない
 }
 
+export type MediaKind = 'exterior' | 'interior' | 'atmosphere' | 'dog_area';
+
+/** 店舗写真。権利（掲載許諾など）と出典が揃ったものだけを表示する */
+export interface PlaceMedia {
+  id: string;
+  url: string;
+  kind: MediaKind;
+  caption?: string;
+  rights: string;
+  credit: string;
+}
+
 export interface Area {
   id: string;
   name: string; // 例「港区」
   prefecture: string;
+  /** 都道府県コード（1〜47） */
+  prefectureCode?: number;
   lat: number;
   lng: number;
 }
@@ -176,6 +196,8 @@ export interface Station {
   id: string;
   name: string; // 例「品川駅」
   areaId: string;
+  lineName?: string;
+  operator?: string;
   lat: number;
   lng: number;
 }

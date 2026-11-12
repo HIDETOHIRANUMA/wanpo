@@ -51,7 +51,8 @@
     "import:places": "tsx scripts/import-places.ts",
     "android:dev-build": "expo run:android",
     "ios:dev-build": "expo run:ios",
-    "test:db": "bash scripts/test-db.sh"
+    "test:db": "bash scripts/test-db.sh",
+    "import:geo": "tsx scripts/import-areas-stations.ts"
   },
   "private": true,
   "jest": {

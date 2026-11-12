@@ -5,13 +5,17 @@ import type {
   HourException,
   Period,
   Place,
+  PlaceMedia,
   Schedule,
   Tri,
   WeightLimit,
   Weekday,
 } from '@/domain/types';
 import { CARRY_METHODS } from '@/domain/types';
-import type { HourExceptionRow, HourRow, PlaceRow, ZoneRow } from './dbTypes';
+import type { Review, ReviewTag, UgcStatus } from '@/domain/ugc';
+import { REVIEW_TAGS } from '@/domain/ugc';
+import { validateHttpsUrl } from '@/domain/contact';
+import type { HourExceptionRow, HourRow, MediaRow, PlaceRow, ReviewRow, ZoneRow } from './dbTypes';
 
 /** 想定外の値・null は必ず unknown へ（肯定へ倒さない） */
 const tri = (v: unknown): Tri => (v === 'yes' || v === 'no' ? v : 'unknown');
@@ -160,12 +164,50 @@ export function mapPlace(row: PlaceRow): Place {
     })),
     phone: row.phone ?? undefined,
     officialUrl: row.official_url ?? undefined,
-    // 権利・出典が揃っている写真だけ表示
-    photoUrl: row.photo_url && row.photo_rights && row.photo_credit ? row.photo_url : undefined,
-    photoCredit: row.photo_credit ?? undefined,
+    reservationUrl: validateHttpsUrl(row.reservation_url) ?? undefined,
+    atmosphereTags: (row.atmosphere_tags ?? []).filter((t) => typeof t === 'string' && t.trim() !== '').slice(0, 6),
+    media: mapMedia(row),
+    areaName: row.areas?.name ?? undefined,
     description: row.description ?? undefined,
     isDemo: false,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+/** 権利・出典が揃っている https の写真だけ表示する。旧来の photo_url は先頭の外観写真として扱う */
+export function mapMedia(row: Pick<PlaceRow, 'photo_url' | 'photo_rights' | 'photo_credit' | 'place_media'>): PlaceMedia[] {
+  const out: PlaceMedia[] = [];
+  if (row.photo_url && row.photo_rights && row.photo_credit && validateHttpsUrl(row.photo_url))
+    out.push({ id: 'main', url: row.photo_url, kind: 'exterior', rights: row.photo_rights, credit: row.photo_credit });
+  const media = [...(row.place_media ?? [])].sort((a: MediaRow, b: MediaRow) => a.sort - b.sort);
+  for (const m of media) {
+    if (!m.rights || !m.credit || !validateHttpsUrl(m.url)) continue;
+    out.push({
+      id: m.id,
+      url: m.url,
+      kind: oneOf(m.kind, ['exterior', 'interior', 'atmosphere', 'dog_area'] as const, 'atmosphere'),
+      caption: m.caption ?? undefined,
+      rights: m.rights,
+      credit: m.credit,
+    });
+  }
+  return out;
+}
+
+const UGC_STATUSES = ['pending', 'approved', 'rejected', 'hidden'] as const;
+
+export function mapReview(r: ReviewRow, mine: boolean): Review {
+  return {
+    id: r.id,
+    placeId: r.place_id,
+    nickname: r.nickname,
+    body: r.body,
+    tags: (r.tags ?? []).filter((t): t is ReviewTag => (REVIEW_TAGS as string[]).includes(t)),
+    visitedOn: r.visited_on,
+    publishedAt: r.published_at,
+    mine,
+    // 状態が取れない（未ログインの公開一覧）なら公開中のものだけが返っている
+    status: r.status ? oneOf<UgcStatus>(r.status, UGC_STATUSES, 'pending') : 'approved',
   };
 }

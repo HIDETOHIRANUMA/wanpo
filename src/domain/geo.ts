@@ -25,3 +25,22 @@ export function isValidJapanCoord(lat: number, lng: number): boolean {
     Number.isFinite(lat) && Number.isFinite(lng) && lat >= 20 && lat <= 46 && lng >= 122 && lng <= 154
   );
 }
+
+export interface Bounds {
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+}
+
+/** 中心から半径 km の円を囲む緯度経度の範囲（サーバーでの絞り込み用。距離の判定は distanceKm で行う） */
+export function boundingBox(center: LatLng, radiusKm: number): Bounds {
+  const dLat = radiusKm / 110.574;
+  const dLng = radiusKm / (111.32 * Math.max(0.01, Math.cos((center.lat * Math.PI) / 180)));
+  return {
+    minLat: center.lat - dLat,
+    maxLat: center.lat + dLat,
+    minLng: center.lng - dLng,
+    maxLng: center.lng + dLng,
+  };
+}

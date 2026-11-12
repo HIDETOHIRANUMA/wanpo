@@ -3,9 +3,10 @@
 冷房のある室内で、自分の犬の条件に合う休憩先を、出かける前に探すための iOS / Android アプリです。
 判定の対象は施設全体ではなく **「犬が滞在できる区画」**。同じ区画で「犬の室内同伴」と「冷房」の両方に確認記録がある施設を、主な検索結果にします。
 
-- 体験の流れ：検索 → 犬の条件・利用条件・確認日を見る → 電話／公式サイトで確認 → 外部地図で向かう → 保存
-- 初期エリア：東京都 品川区・港区・渋谷区（エリアは `areas` / `stations` へのデータ追加で拡張）
-- ログイン不要：検索・詳細・保存・犬の条件。**情報修正の報告と「犬と過ごせたか」の回答だけ** メールOTP認証
+- 体験の流れ：検索 → 写真・雰囲気・口コミ・犬の条件・確認日を見る → 電話／公式サイト／予約ページで確認 → 外部地図で向かう → 保存
+- 対象エリア：**全国**（都道府県 → 市区町村、または駅名で基準点を選ぶ。エリア・駅は `npm run import:geo` で投入）。デモは東京3区・大阪・福岡・札幌の架空施設
+- 利用者の投稿：**口コミ**と**犬の写真**（すぐ公開・通報3件で自動非表示・設定で事前確認制に切替可）。投稿は施設の判定（室内同伴・冷房・犬の条件）を変えません
+- ログイン不要：検索・詳細・口コミと写真の閲覧・保存・犬の条件。**報告・回答・口コミ・写真の投稿・通報** はメールOTP認証
 
 > 実装済み／未検証／実データが必要な項目の一覧は [docs/status.md](docs/status.md) にあります。
 
@@ -29,18 +30,18 @@
 
 ```
 src/
-  app/                 画面（Expo Router）。(tabs)/index=探す, saved=保存, profile=犬の条件
-  domain/              UIから独立した純粋関数：判定（judge）・営業時間（hours）・検索（search）・確認日（verification）
+  app/                 画面（Expo Router）。(tabs)/index=探す, saved=保存, profile=犬の条件, review/=口コミ投稿, photo/=犬の写真投稿
+  domain/              UIから独立した純粋関数：判定（judge）・営業時間（hours）・検索（search）・確認日（verification）・投稿（ugc）・都道府県
   data/
     repository.ts      画面から見たデータ取得の共通インターフェース
-    demo/              DemoRepository（架空データ・模擬ログイン・端末内のデモ報告）
-    supabase/          SupabaseRepository / SupabaseAuth / SupabaseReports
-    import/validate.ts 実データ投入の検証とSQL生成
-  storage/             端末保存（保存施設・犬の条件・報告の下書き）。デモと本番で保存領域を分離
+    demo/              DemoRepository（架空データ・模擬ログイン・端末内のデモ報告・デモの口コミ/写真）
+    supabase/          SupabaseRepository / SupabaseAuth / SupabaseReports / SupabaseUgc（口コミ・写真・通報）
+    import/            実データ投入の検証とSQL生成（施設 validate.ts、全国のエリア・駅 geoValidate.ts）
+  storage/             端末保存（保存施設・犬の条件・報告/口コミの下書き・前回の基準点）。デモと本番で保存領域を分離
   state/AppContext.tsx モード切替と共有状態
-  ui/                  部品・カード・地図・OTPログイン
+  ui/                  部品・写真つきカード（PlaceVisual）・口コミ/写真欄（UgcSection）・地図・OTPログイン・写真の縮小（imagePrep）
 supabase/
-  migrations/          スキーマ・RLS・報告受付関数
+  migrations/          スキーマ・RLS・報告受付関数・口コミ/写真/通報・Storage の権限
   functions/delete-account/  アカウント削除（Edge Function）
   seed/areas_stations.sql    エリア・駅（施設データではない）
   tests/               RLS テスト（Supabase互換スタブで素の PostgreSQL 上で実行）
@@ -110,8 +111,8 @@ Web プレビュー（`npx expo start --web`）では地図を表示せず説明
    npx supabase link --project-ref <プロジェクトref>
    npx supabase db push                       # supabase/migrations を適用
    ```
-   CLI を使わない場合は、Studio の **SQL Editor** で `supabase/migrations/20261111000000_init.sql` を実行。
-3. エリア・駅を投入：SQL Editor で `supabase/seed/areas_stations.sql` を実行（座標は概略値。公開前に確認）。
+   CLI を使わない場合は、Studio の **SQL Editor** で `supabase/migrations/` の SQL を**ファイル名の順に**実行（`20261111000000_init.sql` → `20261112000000_ugc_media_nationwide.sql`）。2つ目は口コミ・写真・店舗写真・予約URL・全国検索の列と、Storage の非公開バケット `user-photos` とその権限を作ります。
+3. エリア・駅を投入：SQL Editor で `supabase/seed/areas_stations.sql` を実行し、全国分は `npm run import:geo`（[docs/operations.md](docs/operations.md) の「7」）。座標は概略値。公開前に確認。
 4. API キー：Dashboard → **Project Settings → API Keys** で publishable key を確認し `.env` に設定。
 5. アカウント削除関数をデプロイ：
    ```bash
@@ -183,7 +184,8 @@ DATABASE_URL='postgresql://...' npm run import:places -- data/places.json --db
 ```
 
 - 書式：`templates/places.template.json`（推奨）または `templates/places.template.csv`。
-- 検証内容：必須値、enum、日本国内の座標、https の URL、電話番号形式、時間帯（`11:00-14:00`、翌日は `18:00-26:00`）、テラス区画の矛盾、確認記録の根拠（URL か短い説明）、写真の権利・出典、未登録エリア、デモ名の公開禁止。
+- 検証内容：必須値、enum、日本国内の座標、https の URL（公式サイト・予約ページ）、電話番号形式、時間帯（`11:00-14:00`、翌日は `18:00-26:00`）、テラス区画の矛盾、確認記録の根拠（URL か短い説明）、店舗写真の権利・出典、雰囲気タグの数、未登録エリア、デモ名の公開禁止。
+- 全国のエリア（市区町村）・駅：`npm run import:geo -- --areas ... --stations ...`（書式は `templates/areas.template.csv` / `templates/stations.template.csv`）。
 - 未入力は `unknown` のまま取り込みます（「制限なし」「可」にしません）。`publication_status` の既定は `draft`。
 - 確認記録は履歴として追加のみ（同じ記録は重複しません）。
 
@@ -202,8 +204,8 @@ DATABASE_URL='postgresql://...' npm run import:places -- data/places.json --db
 ```bash
 npm run typecheck     # TypeScript
 npm run lint          # ESLint（eslint-config-expo）
-npm test              # 判定・営業時間・検索・保存・設定・デモ・投入検証・Supabase層（97件）
-npm run test:rls      # RLS・権限（匿名／利用者A／利用者B）。ローカル PostgreSQL が必要
+npm test              # 判定・営業時間・検索・保存・設定・デモ・投入検証・Supabase層・口コミ/写真（124件）
+npm run test:rls      # RLS・権限（匿名／利用者A〜F・Storage・通報・自動非表示）。ローカル PostgreSQL が必要
 npm run test:db       # 投入テンプレート → DB → アプリの読み取り・判定の往復
 ```
 
@@ -216,13 +218,17 @@ npm run test:db       # 投入テンプレート → DB → アプリの読み�
 2. 利用者A・B をメールOTPでログインし、A のトークンで報告を送信 → B のトークンで `place_reports` を読むと A の報告が見えないこと。
 3. A のトークンで `PATCH /rest/v1/places` や `POST /rest/v1/place_verifications` が権限エラーになること。
 4. 11回目の送信が `rate_limited` になること（`private.app_settings` の `report_daily_limit` で上限を変更可）。
+5. 口コミ：A で `rpc/submit_place_review` → 匿名で `GET /rest/v1/place_reviews?select=*` が**権限エラー**（`author_id` 列が非公開のため）、`select=id,nickname,body` なら読めること。B・C・D の3人で `rpc/flag_ugc` → 匿名で見えなくなること。
+6. 写真：A で `rpc/begin_photo_upload` → 返った `storage_path` に Storage API でアップロード → `rpc/complete_photo_upload`。B が同じパスや A のフォルダにアップロードできないこと、匿名で公開前の写真の署名URLを作れないこと。
 
 ---
 
 ## 10. 既知の制約
 
-- 施設一覧は公開済みを最大1000件まとめて取得し、端末で距離計算・絞り込みしています。件数が増えたら範囲指定の取得に変更が必要です。
-- 駅検索は登録済みの駅名のみ（全国の住所検索なし）。駅・エリアの座標は概略値です。
+- 施設は基準点から選んだ距離の四角い範囲（緯度・経度）でサーバーから取得し、端末で正確な距離・絞り込みを計算します（1回最大500件）。
+- 駅検索は登録済みの駅名のみ（住所・地名の検索なし）。駅・エリアの座標は概略値です。
+- 写真は非公開の Storage に保存し、期限つきの署名URL（1時間）で表示します。長時間開いたままだと画像が切れるので、画面を開き直すと再取得します。
+- 写真の位置情報（EXIF）は読み込まず、縮小・再エンコードした JPEG だけを送ります（再エンコードで EXIF が残らないことは実機で未確認）。
 - 「現在利用可能」は登録された営業時間と犬同伴時間による判定で、実際の営業・空席ではありません。
 - 犬の条件は1頭分。クラウド同期なし（端末内のみ）。
 - 管理画面は作らず Supabase Studio を使います。審査状態の変更・内部メモは Studio（管理者権限）で行います。
@@ -230,7 +236,7 @@ npm run test:db       # 投入テンプレート → DB → アプリの読み�
 
 ## 11. 今回の対象外（今後の拡張候補）
 
-予約・決済、店舗向け課金、公開口コミ、ユーザー写真投稿、チャット、複数頭の複雑な条件、クラウド同期、独自ルート検索、日陰の自動推定、リアルタイム混雑、天気連動通知、バックグラウンド追跡、犬の健康診断・外出安全判定。
+アプリ内での予約・決済（予約は外部の予約ページへのリンクのみ）、店舗向け課金、口コミの評価点・いいね、写真の自動の顔検出、チャット、複数頭の複雑な条件、クラウド同期、独自ルート検索、日陰の自動推定、リアルタイム混雑、天気連動通知、バックグラウンド追跡、犬の健康診断・外出安全判定。
 
 ## 12. プライバシー・アカウント削除
 

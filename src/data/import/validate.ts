@@ -22,6 +22,7 @@ export const ENUMS = {
   verification_field: ['indoor_dogs', 'air_conditioning', 'dog_conditions', 'usage_conditions', 'hours'],
   verification_method: ['official_info', 'phone', 'onsite', 'other'],
   schedule: ['business', 'dog'],
+  media_kind: ['exterior', 'interior', 'atmosphere', 'dog_area'],
 } as const;
 
 export const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
@@ -65,6 +66,17 @@ export interface NormalizedPlace {
   hours: NormalizedHour[];
   exceptions: NormalizedException[];
   verifications: NormalizedVerification[];
+  atmosphere_tags: string[];
+  media: NormalizedMedia[];
+}
+
+export interface NormalizedMedia {
+  url: string;
+  kind: string;
+  caption: string | null;
+  rights: string;
+  credit: string;
+  sort: number;
 }
 
 type Raw = Record<string, unknown>;
@@ -134,6 +146,46 @@ export function validatePlace(raw: Raw, index: number, knownAreas: string[], now
   const photo_rights = opt(raw, 'photo_rights');
   const photo_credit = opt(raw, 'photo_credit');
   if (photoRaw && (!photo_rights || !photo_credit)) err('photo_url', '写真には photo_rights（権利）と photo_credit（出典）が必要です');
+
+  const reservationRaw = str(raw.reservation_url);
+  if (reservationRaw && !validateHttpsUrl(reservationRaw)) err('reservation_url', 'https:// で始まる正しいURLにしてください');
+
+  // 雰囲気タグ：JSON は配列、CSV は「|」区切り
+  const tagsRaw = Array.isArray(raw.atmosphere_tags)
+    ? raw.atmosphere_tags
+    : typeof raw.atmosphere_tags === 'string'
+      ? raw.atmosphere_tags.split('|')
+      : [];
+  const atmosphere_tags = tagsRaw.map((t) => str(t)).filter((t): t is string => !!t);
+  if (atmosphere_tags.length > 6) err('atmosphere_tags', '雰囲気タグは6個までにしてください');
+  if (atmosphere_tags.some((t) => t.length > 20)) err('atmosphere_tags', '雰囲気タグは1つ20文字以内にしてください');
+
+  // 店舗写真：権利（掲載許諾など）と出典が必須。他サービスの写真の転載は不可
+  let mediaRaw: unknown = raw.media;
+  if (typeof mediaRaw === 'string') {
+    try {
+      mediaRaw = JSON.parse(mediaRaw);
+    } catch {
+      err('media', 'JSON の配列で入力してください');
+      mediaRaw = [];
+    }
+  }
+  const media: NormalizedMedia[] = [];
+  if (mediaRaw !== undefined && mediaRaw !== null && !Array.isArray(mediaRaw)) err('media', '配列で入力してください');
+  (Array.isArray(mediaRaw) ? mediaRaw : []).forEach((m: unknown, i: number) => {
+    const o = (m && typeof m === 'object' ? m : {}) as Raw;
+    const mp = `media[${i}].`;
+    const url = str(o.url);
+    if (!url || !validateHttpsUrl(url)) err(mp + 'url', 'https:// で始まる画像のURLを入力してください');
+    const kind = en(o, 'kind', ENUMS.media_kind, null, mp);
+    if (!kind) err(mp + 'kind', `種類は ${ENUMS.media_kind.join(' / ')} のいずれかです`);
+    const rights = opt(o, 'rights', 200, mp);
+    const credit = opt(o, 'credit', 200, mp);
+    if (!rights || !credit) err(mp + 'rights', '写真には rights（掲載許諾など権利の根拠）と credit（出典）が必要です');
+    const caption = opt(o, 'caption', 100, mp);
+    if (url && kind && rights && credit) media.push({ url, kind, caption, rights, credit, sort: i });
+  });
+  if (media.length > 10) err('media', '店舗写真は10枚までにしてください');
 
   // 区画
   const zoneRaw = (raw.zone && typeof raw.zone === 'object' ? raw.zone : {}) as Raw;
@@ -274,6 +326,7 @@ export function validatePlace(raw: Raw, index: number, knownAreas: string[], now
         photo_rights,
         photo_credit,
         description: opt(raw, 'description', 1000),
+        reservation_url: reservationRaw,
       },
       zone: {
         name: zoneName,
@@ -294,6 +347,8 @@ export function validatePlace(raw: Raw, index: number, knownAreas: string[], now
       hours,
       exceptions,
       verifications,
+      atmosphere_tags,
+      media,
     },
   };
 }
@@ -373,6 +428,8 @@ const lit = (v: unknown): string => {
   return `'${String(v).replace(/'/g, "''")}'`;
 };
 
+const textArray = (xs: string[]): string => `array[${xs.map(lit).join(', ')}]::text[]`;
+
 /** 検証済みデータから、1トランザクションの upsert SQL を生成する（Supabase Studio の SQL Editor で実行可） */
 export function toSql(rows: NormalizedPlace[], newId: () => string): string {
   const out: string[] = ['begin;'];
@@ -381,9 +438,14 @@ export function toSql(rows: NormalizedPlace[], newId: () => string): string {
     const cols = Object.keys(r.place);
     out.push(`-- ${r.ref}: ${r.place.name}`);
     out.push(
-      `insert into public.places (id, ${cols.join(', ')}) values (${lit(id)}, ${cols.map((c) => lit(r.place[c])).join(', ')})\n` +
-        `  on conflict (id) do update set ${cols.map((c) => `${c} = excluded.${c}`).join(', ')};`,
+      `insert into public.places (id, ${cols.join(', ')}, atmosphere_tags) values (${lit(id)}, ${cols.map((c) => lit(r.place[c])).join(', ')}, ${textArray(r.atmosphere_tags)})\n` +
+        `  on conflict (id) do update set ${cols.map((c) => `${c} = excluded.${c}`).join(', ')}, atmosphere_tags = excluded.atmosphere_tags;`,
     );
+    out.push(`delete from public.place_media where place_id = ${lit(id)};`);
+    for (const m of r.media)
+      out.push(
+        `insert into public.place_media (place_id, url, kind, caption, rights, credit, sort) values (${lit(id)}, ${lit(m.url)}, ${lit(m.kind)}, ${lit(m.caption)}, ${lit(m.rights)}, ${lit(m.credit)}, ${m.sort});`,
+      );
     const z = r.zone;
     const zcols = Object.keys(z);
     const zvals = zcols.map((c) =>

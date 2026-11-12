@@ -32,7 +32,7 @@ describe('設定（デモ／本番の切り替え）', () => {
 describe('デモ', () => {
   test('未公開のデモ施設は一覧・詳細に出ない', async () => {
     const repo = new DemoRepository(NOW, 0);
-    const list = await repo.listPublishedPlaces();
+    const list = await repo.listPlacesNear({ lat: 35.64, lng: 139.73 }, 3000);
     expect(list.length).toBeGreaterThanOrEqual(18);
     expect(list.some((p) => p.id === 'demo-12')).toBe(false);
     expect(await repo.getPlace('demo-12')).toBeNull();
@@ -40,7 +40,7 @@ describe('デモ', () => {
   });
 
   test('要求されたケースがデモデータに含まれる', async () => {
-    const all = await new DemoRepository(NOW, 0).listPublishedPlaces();
+    const all = await new DemoRepository(NOW, 0).listPlacesNear({ lat: 35.64, lng: 139.73 }, 3000);
     const has = (pred: (p: (typeof all)[number]) => boolean) => expect(all.some(pred)).toBe(true);
     has((p) => p.zone.scope === 'terrace');
     has((p) => p.zone.airConditioning === 'unknown');
@@ -57,7 +57,7 @@ describe('デモ', () => {
     const p = (await new DemoRepository(NOW, 0).getPlace('demo-01'))!;
     expect(p.phone).toBeTruthy();
     const a = contactActions(p, { isDemoMode: true, source: 'live', platform: 'ios' });
-    expect(a).toEqual({ telUrl: null, officialUrl: null, directionsUrl: null, blockedReason: expect.stringContaining('デモ') });
+    expect(a).toEqual({ telUrl: null, officialUrl: null, reservationUrl: null, directionsUrl: null, blockedReason: expect.stringContaining('デモ') });
   });
 
   test('本番でも掲載を確認できない保存施設は電話・経路を無効', () => {
@@ -160,11 +160,14 @@ describe('DB 行 → ドメイン（unknown を失わない）', () => {
       order_required: 'no', order_text: null, reservation_required: 'no', reservation_text: null, fee_status: 'free', fee_text: null,
       water: 'yes', business_hours_status: 'unknown', dog_hours_mode: 'unknown', phone: null, official_url: null,
       photo_url: 'https://example.com/a.jpg', photo_rights: null, photo_credit: null, description: null,
+      reservation_url: 'http://example.com/insecure', atmosphere_tags: null,
       created_at: '', updated_at: '', place_dog_zones: [], place_hours: null, place_hour_exceptions: null, place_verifications: null,
     } as PlaceRow;
     const p = mapPlace(row);
     expect(p.zone.indoorDogs).toBe('unknown');
-    expect(p.photoUrl).toBeUndefined();
+    expect(p.media).toEqual([]);
+    expect(p.reservationUrl).toBeUndefined(); // https 以外の予約URLは使わない
+    expect(p.atmosphereTags).toEqual([]);
     expect(p.businessHours.weekly.status).toBe('unknown');
     expect(p.isDemo).toBe(false);
   });

@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ALL_AREA_ORIGIN } from '@/data/demo/areas';
-import type { RepoError } from '@/data/repository';
+import { DEFAULT_ORIGIN } from '@/data/demo/areas';
+import { RepoError } from '@/data/repository';
 import {
   activeRestrictions,
   DEFAULT_FILTERS,
@@ -13,7 +13,9 @@ import {
   type SearchFilters,
   type SearchOrigin,
 } from '@/domain/search';
+import { PREFECTURES } from '@/domain/prefectures';
 import type { Area, Place, Station } from '@/domain/types';
+import type { UgcCounts } from '@/domain/ugc';
 import { useApp } from '@/state/AppContext';
 import { Button, Chip, DemoBanner, ErrorState, Loading, ToggleRow } from '@/ui/components';
 import { errorMessage } from '@/ui/errors';
@@ -22,15 +24,14 @@ import { PlaceCard } from '@/ui/PlaceCard';
 import { SearchMap } from '@/ui/SearchMap';
 import { colors, MIN_TAP, radius, space, type } from '@/ui/theme';
 
-type LoadState = { kind: 'loading' } | { kind: 'error'; error: RepoError } | { kind: 'ready' };
+type LoadState = { key: string; error: RepoError | null } | null;
 
 export default function SearchScreen() {
-  const { backend, isDemo, profile, config } = useApp();
-  const [load, setLoad] = useState<LoadState>({ kind: 'loading' });
+  const { backend, isDemo, profile, config, lastOrigin } = useApp();
+  const [load, setLoad] = useState<LoadState>(null);
   const [places, setPlaces] = useState<Place[]>([]);
-  const [areas, setAreas] = useState<Area[]>([]);
-  const [stations, setStations] = useState<Station[]>([]);
-  const [origin, setOrigin] = useState<SearchOrigin>(ALL_AREA_ORIGIN);
+  const [counts, setCounts] = useState<Record<string, UgcCounts>>({});
+  const [origin, setOriginState] = useState<SearchOrigin>(DEFAULT_ORIGIN);
   const [filters, setFilters] = useState<SearchFilters>(DEFAULT_FILTERS);
   const [query, setQuery] = useState('');
   const [view, setView] = useState<'list' | 'map'>('list');
@@ -38,37 +39,62 @@ export default function SearchScreen() {
   const [locBusy, setLocBusy] = useState(false);
   const [locMessage, setLocMessage] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
+  const [originReady, setOriginReady] = useState(false);
 
   const [reloadKey, setReloadKey] = useState(0);
-  const retry = () => {
-    setLoad({ kind: 'loading' });
-    setReloadKey((k) => k + 1);
+  const retry = () => setReloadKey((k) => k + 1);
+
+  const setOrigin = (o: SearchOrigin) => {
+    setOriginState(o);
+    // 前回の基準点として端末に保存（現在地は保存しない）
+    lastOrigin.save(o).catch(() => undefined);
   };
 
+  // 前回の基準点（エリア・駅・地図の中心）から始める
   useEffect(() => {
+    let alive = true;
+    lastOrigin
+      .load()
+      .then((o) => {
+        if (alive && o) setOriginState(o);
+      })
+      .catch(() => undefined)
+      .finally(() => alive && setOriginReady(true));
+    return () => {
+      alive = false;
+    };
+  }, [lastOrigin]);
+
+  // 基準点と距離の範囲にある施設だけを取得（全国のデータを一度に読み込まない）
+  const loadKey = `${origin.lat},${origin.lng},${filters.radiusKm},${reloadKey}`;
+  useEffect(() => {
+    if (!originReady) return;
     let alive = true;
     (async () => {
       try {
-        const [p, a, s] = await Promise.all([
-          backend.places.listPublishedPlaces(),
-          backend.places.listAreas(),
-          backend.places.listStations(),
-        ]);
+        const p = await backend.places.listPlacesNear({ lat: origin.lat, lng: origin.lng }, filters.radiusKm);
         if (!alive) return;
         setPlaces(p);
-        setAreas(a);
-        setStations(s);
         setNow(new Date());
-        setLoad({ kind: 'ready' });
+        setLoad({ key: loadKey, error: null });
+        // 件数は補助情報。取得できなくても一覧は表示する
+        backend.places
+          .getUgcCounts(p.map((x) => x.id))
+          .then((c) => alive && setCounts(c))
+          .catch(() => alive && setCounts({}));
       } catch (e) {
         // 本番の通信障害でもデモへ切り替えない
-        if (alive) setLoad({ kind: 'error', error: e as RepoError });
+        if (alive) setLoad({ key: loadKey, error: e instanceof RepoError ? e : new RepoError('network') });
       }
     })();
     return () => {
       alive = false;
     };
-  }, [backend, reloadKey]);
+  }, [backend, loadKey, origin.lat, origin.lng, filters.radiusKm, originReady]);
+
+  const loading = load === null || (load.key !== loadKey && places.length === 0);
+  const refreshing = load !== null && load.key !== loadKey;
+  const loadError = load && load.key === loadKey ? load.error : null;
 
   // 「営業時間上は営業中」の表示を1分ごとに更新
   useEffect(() => {
@@ -76,7 +102,7 @@ export default function SearchScreen() {
     return () => clearInterval(t);
   }, []);
 
-  const areaNames = useMemo(() => Object.fromEntries(areas.map((a) => [a.id, a.name])), [areas]);
+  const areaNames = useMemo(() => Object.fromEntries(places.filter((p) => p.areaName).map((p) => [p.areaId, p.areaName!])), [places]);
 
   // 地図と一覧は同じ結果配列を使う
   const results = useMemo(
@@ -167,10 +193,15 @@ export default function SearchScreen() {
         </Text>
       </View>
 
-      {load.kind === 'loading' ? (
+      {refreshing && !loading ? (
+        <Text style={[type.small, { paddingHorizontal: space.lg, paddingTop: space.xs }]} accessibilityLiveRegion="polite">
+          更新中…
+        </Text>
+      ) : null}
+      {loading ? (
         <Loading />
-      ) : load.kind === 'error' ? (
-        <ErrorState message={errorMessage(load.error, '施設情報を読み込めませんでした。')} onRetry={retry} />
+      ) : loadError ? (
+        <ErrorState message={errorMessage(loadError, '施設情報を読み込めませんでした。')} onRetry={retry} />
       ) : view === 'map' ? (
         <SearchMap
           results={results}
@@ -184,7 +215,7 @@ export default function SearchScreen() {
           keyExtractor={(r) => r.place.id}
           contentContainerStyle={{ paddingTop: space.md, paddingBottom: space.xl }}
           ListHeaderComponent={<Text style={[type.small, { marginHorizontal: space.lg, marginBottom: space.sm }]}>{results.length}件</Text>}
-          renderItem={({ item }) => <PlaceCard result={item} originLabel={origin.label} />}
+          renderItem={({ item }) => <PlaceCard result={item} originLabel={origin.label} counts={counts[item.place.id]} />}
           ListEmptyComponent={
             <EmptyResults restrictions={activeRestrictions(filters, query, origin)} onRemove={removeRestriction} />
           }
@@ -194,8 +225,6 @@ export default function SearchScreen() {
       <FilterSheet visible={sheet === 'filters'} filters={filters} onChange={setFilters} onClose={() => setSheet(null)} hasProfile={!!profile} />
       <OriginSheet
         visible={sheet === 'origin'}
-        areas={areas}
-        stations={stations}
         onClose={() => setSheet(null)}
         onPick={(o) => {
           setOrigin(o);
@@ -320,21 +349,48 @@ function FilterSheet({
   );
 }
 
-function OriginSheet({
-  visible,
-  areas,
-  stations,
-  onClose,
-  onPick,
-}: {
-  visible: boolean;
-  areas: Area[];
-  stations: Station[];
-  onClose: () => void;
-  onPick: (o: SearchOrigin) => void;
-}) {
+function OriginSheet({ visible, onClose, onPick }: { visible: boolean; onClose: () => void; onPick: (o: SearchOrigin) => void }) {
+  const { backend } = useApp();
+  const [tab, setTab] = useState<'station' | 'area'>('station');
   const [q, setQ] = useState('');
-  const filtered = stations.filter((s) => !q.trim() || s.name.includes(q.trim()));
+  const [stationResult, setStationResult] = useState<{ q: string; list: Station[]; error: boolean } | null>(null);
+  const [pref, setPref] = useState<number | null>(null);
+  const [areaResult, setAreaResult] = useState<{ pref: number; list: Area[]; error: boolean } | null>(null);
+
+  // 駅名：入力が止まってから検索（全国の駅データをまとめて読み込まない）
+  const term = q.trim();
+  useEffect(() => {
+    if (!term) return;
+    let alive = true;
+    const t = setTimeout(() => {
+      backend.places
+        .searchStations(term)
+        .then((list) => alive && setStationResult({ q: term, list, error: false }))
+        .catch(() => alive && setStationResult({ q: term, list: [], error: true }));
+    }, 300);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [backend, term]);
+
+  useEffect(() => {
+    if (pref === null) return;
+    let alive = true;
+    backend.places
+      .listAreas(pref)
+      .then((list) => alive && setAreaResult({ pref, list, error: false }))
+      .catch(() => alive && setAreaResult({ pref, list: [], error: true }));
+    return () => {
+      alive = false;
+    };
+  }, [backend, pref]);
+
+  const stations = stationResult && stationResult.q === term ? stationResult : null;
+  const areas = pref !== null && areaResult?.pref === pref ? areaResult : null;
+  const regions = [...new Set(PREFECTURES.map((p) => p.region))];
+  const prefName = PREFECTURES.find((p) => p.code === pref)?.name;
+
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.sheetBackdrop}>
@@ -343,29 +399,77 @@ function OriginSheet({
             <Text style={type.title} accessibilityRole="header">
               検索の基準点を選ぶ
             </Text>
-            <Text style={[type.label, { marginTop: space.md }]}>エリア</Text>
-            <Button label="対象エリア全体（品川区・港区・渋谷区）" variant="secondary" onPress={() => onPick(ALL_AREA_ORIGIN)} />
-            {areas.map((a) => (
-              <Button
-                key={a.id}
-                label={`${a.name}（中心付近から・${a.name}に限定）`}
-                variant="secondary"
-                onPress={() => onPick({ kind: 'area', label: `${a.name}の中心付近`, lat: a.lat, lng: a.lng, areaId: a.id })}
-              />
-            ))}
-            <Text style={[type.label, { marginTop: space.md }]}>登録駅</Text>
-            <TextInput
-              value={q}
-              onChangeText={setQ}
-              placeholder="駅名で絞り込み（例：品川）"
-              placeholderTextColor={colors.textMuted}
-              style={styles.input}
-              accessibilityLabel="駅名で絞り込み"
-            />
-            {filtered.length === 0 ? <Text style={type.small}>登録駅に該当がありません。</Text> : null}
-            {filtered.map((s) => (
-              <Button key={s.id} label={s.name} variant="secondary" onPress={() => onPick({ kind: 'station', label: s.name, lat: s.lat, lng: s.lng })} />
-            ))}
+            <View style={[styles.sheetTabs, { marginTop: space.sm }]} accessibilityRole="tablist">
+              {(['station', 'area'] as const).map((v) => (
+                <Pressable
+                  key={v}
+                  onPress={() => setTab(v)}
+                  style={[styles.segItem, tab === v && styles.segActive]}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: tab === v }}
+                >
+                  <Text style={[type.label, tab === v && { color: '#fff' }]}>{v === 'station' ? '駅から' : '都道府県・市区町村から'}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {tab === 'station' ? (
+              <>
+                <TextInput
+                  value={q}
+                  onChangeText={setQ}
+                  placeholder="駅名を入力（例：梅田、天神、大通）"
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.input}
+                  accessibilityLabel="駅名で検索"
+                  autoFocus
+                />
+                {!term ? <Text style={type.small}>全国の駅から探せます（登録済みの駅のみ）。</Text> : null}
+                {term && !stations ? <Text style={type.small}>検索中…</Text> : null}
+                {stations?.error ? <Text style={{ color: colors.bad }}>駅を検索できませんでした。通信状況を確認してください。</Text> : null}
+                {stations && !stations.error && stations.list.length === 0 ? <Text style={type.small}>該当する駅がありません。</Text> : null}
+                {stations?.list.map((s) => (
+                  <Button
+                    key={s.id}
+                    label={`${s.name}${s.lineName ? `（${s.lineName}）` : ''}`}
+                    variant="secondary"
+                    onPress={() => onPick({ kind: 'station', label: s.name, lat: s.lat, lng: s.lng })}
+                  />
+                ))}
+              </>
+            ) : pref === null ? (
+              <>
+                <Button label="東京都心（港区周辺）" variant="secondary" onPress={() => onPick(DEFAULT_ORIGIN)} />
+                {regions.map((r) => (
+                  <View key={r} style={{ gap: space.xs, marginTop: space.sm }}>
+                    <Text style={type.label}>{r}</Text>
+                    <View style={styles.chips}>
+                      {PREFECTURES.filter((p) => p.region === r).map((p) => (
+                        <Chip key={p.code} label={p.name} selected={false} onPress={() => setPref(p.code)} />
+                      ))}
+                    </View>
+                  </View>
+                ))}
+              </>
+            ) : (
+              <>
+                <Button label="← 都道府県を選び直す" variant="ghost" onPress={() => setPref(null)} />
+                <Text style={type.heading}>{prefName}</Text>
+                {!areas ? <Text style={type.small}>読み込み中…</Text> : null}
+                {areas?.error ? <Text style={{ color: colors.bad }}>市区町村を読み込めませんでした。通信状況を確認してください。</Text> : null}
+                {areas && !areas.error && areas.list.length === 0 ? (
+                  <Text style={type.small}>{prefName}の掲載エリアはまだありません。駅から探すか、別の都道府県をお選びください。</Text>
+                ) : null}
+                {areas?.list.map((a) => (
+                  <Button
+                    key={a.id}
+                    label={`${a.name}（中心付近から・${a.name}に限定）`}
+                    variant="secondary"
+                    onPress={() => onPick({ kind: 'area', label: `${a.name}の中心付近`, lat: a.lat, lng: a.lng, areaId: a.id })}
+                  />
+                ))}
+              </>
+            )}
             <Button label="閉じる" onPress={onClose} style={{ marginTop: space.md }} />
           </ScrollView>
         </SafeAreaView>
@@ -391,6 +495,7 @@ const styles = StyleSheet.create({
   originBox: { flex: 1, minHeight: MIN_TAP, justifyContent: 'center' },
   notice: { ...type.small, color: colors.warn, backgroundColor: colors.warnBg, padding: space.sm, borderRadius: radius.sm },
   segment: { flex: 1, flexDirection: 'row', borderWidth: 1.5, borderColor: colors.primary, borderRadius: radius.md, overflow: 'hidden' },
+  sheetTabs: { flexDirection: 'row', borderWidth: 1.5, borderColor: colors.primary, borderRadius: radius.md, overflow: 'hidden' },
   segItem: { flex: 1, minHeight: MIN_TAP, alignItems: 'center', justifyContent: 'center' },
   segActive: { backgroundColor: colors.primary },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: space.sm },

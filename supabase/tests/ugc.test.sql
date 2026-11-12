@@ -27,6 +27,7 @@ select tests.expect_eq((select count(*) from public.places where reservation_url
 select tests.expect_denied($$select public.submit_place_review(gen_random_uuid(), '11111111-1111-1111-1111-111111111111', 'x', 'x', '{}', null)$$, 'anon: 口コミを投稿できない（ログイン必須）');
 select tests.expect_denied($$select * from public.begin_photo_upload(gen_random_uuid(), '11111111-1111-1111-1111-111111111111', null)$$, 'anon: 写真を投稿できない');
 select tests.expect_denied($$select public.flag_ugc('review', gen_random_uuid(), 'spam')$$, 'anon: 通報できない');
+select tests.expect_denied($$select * from public.my_ugc_ids('11111111-1111-1111-1111-111111111111')$$, 'anon: 投稿IDの照会はできない');
 select tests.expect_denied($$insert into storage.objects (bucket_id, name) values ('user-photos', 'x/y.jpg')$$, 'anon: Storage にアップロードできない');
 select tests.expect_denied($$insert into public.place_media (place_id, url, kind, rights, credit) values ('11111111-1111-1111-1111-111111111111', 'https://example.com/x.jpg', 'exterior', 'x', 'x')$$, 'anon: 店舗写真を登録できない');
 reset role;
@@ -75,6 +76,7 @@ select set_config('request.jwt.claims', '{"sub":"c0000000-0000-0000-0000-0000000
 select tests.expect_eq((select count(*) from (select public.complete_photo_upload(:'photo1') as s) x where s = 'approved'), 1, 'C: 完了するとすぐ公開');
 select tests.expect_denied($$insert into storage.objects (bucket_id, name) values ('user-photos', '$$ || :'path1' || $$x')$$, 'C: 完了後に同じ枠へ追加アップロードできない');
 select tests.expect_denied($$select uploader_id from public.place_photos$$, 'C: 写真の投稿者IDの列は読めない');
+select tests.expect_eq((select count(*) from public.my_ugc_ids('11111111-1111-1111-1111-111111111111')), 6, 'C: 自分の投稿IDだけ取得できる（口コミ5・写真1）');
 select photo_id as photo2, storage_path as path2 from public.begin_photo_upload('cc000000-0000-0000-0000-000000000102', '11111111-1111-1111-1111-111111111111', null) \gset
 reset role;
 
@@ -106,6 +108,7 @@ select public.flag_ugc('review', :'review1', 'spam');
 select public.flag_ugc('photo', :'photo1', 'personal_info');
 select tests.expect_error($$select public.flag_ugc('review', '$$ || :'review1' || $$', 'dislike')$$, 'validation:flag', 'D: 通報理由は決められた値だけ');
 select tests.expect_denied($$select * from private.ugc_flags$$, 'D: 通報の記録は読めない');
+select tests.expect_eq((select count(*) from public.my_ugc_ids('11111111-1111-1111-1111-111111111111')), 0, 'D: 他人の投稿IDは取得できない');
 select tests.expect_eq((select count(*) from public.place_reviews where id = :'review1'), 1, 'D: 通報1人目では非表示にならない');
 select set_config('request.jwt.claims', '{"sub":"e0000000-0000-0000-0000-00000000000e","role":"authenticated"}', false);
 select public.flag_ugc('review', :'review1', 'inappropriate');

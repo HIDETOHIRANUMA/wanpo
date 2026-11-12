@@ -50,6 +50,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         },
       ],
       ['react-native-maps', androidMapsKey ? { androidGoogleMapsApiKey: androidMapsKey } : {}],
+      [
+        'expo-image-picker',
+        {
+          // 写真はOSの選択画面から1枚だけ選ぶ。カメラ・マイクは使わない
+          photosPermission: '犬の写真を投稿するときに、選んだ写真だけを使います。',
+          cameraPermission: false,
+          microphonePermission: false,
+        },
+      ],
     ],
     experiments: { typedRoutes: false },
     extra: {

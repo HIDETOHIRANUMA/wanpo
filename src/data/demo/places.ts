@@ -1,4 +1,5 @@
 import { toJst } from '@/domain/hours';
+import { AREAS } from './areas';
 import type {
   DogZone,
   Period,
@@ -12,7 +13,7 @@ import type {
 } from '@/domain/types';
 
 /**
- * 架空のデモ施設（約20件）。実在の店舗・住所・電話・確認情報ではない。
+ * 架空のデモ施設（26件。東京3区＋大阪・福岡・札幌）。実在の店舗・住所・電話・確認情報ではない。
  * 確認日や臨時休業日は「基準時刻 now」からの相対で作り、時間が経っても同じ状態を再現する。
  */
 
@@ -86,13 +87,48 @@ interface DemoSpec {
   officialUrl?: string;
   description?: string;
   updatedDaysAgo?: number;
+  /** 予約ページあり（デモでは example.com。リンクは開かない） */
+  reservation?: boolean;
 }
+
+/** 雰囲気タグ（デモ）。写真の代わりに一覧で雰囲気を伝える */
+const DEMO_TAGS: Record<string, string[]> = {
+  'demo-01': ['木のぬくもり', '大きな窓', 'ソファ席'],
+  'demo-02': ['開放的', 'テラス', '緑が多い'],
+  'demo-03': ['レトロ', '窓際席'],
+  'demo-04': ['焼きたてパン', '明るい'],
+  'demo-05': ['広々', 'ベンチ'],
+  'demo-06': ['自家焙煎', 'カウンター'],
+  'demo-07': ['上質', '天井が高い', 'ソファ席'],
+  'demo-08': ['昔ながら', '落ち着き'],
+  'demo-09': ['アメリカン', 'ボックス席'],
+  'demo-10': ['夜カフェ', '間接照明'],
+  'demo-11': ['和モダン', '静か'],
+  'demo-13': ['隠れ家', '小上がり'],
+  'demo-14': ['個室', '記念日向け'],
+  'demo-15': ['小さなお店', 'かわいい'],
+  'demo-16': ['ラウンジ', '広々'],
+  'demo-17': ['ガラス張り', '大型犬も'],
+  'demo-18': ['定食', '家庭的'],
+  'demo-19': ['ガーデン', '緑が多い'],
+  'demo-21': ['川沿い', '明るい', 'ソファ席'],
+  'demo-22': ['ビルの中', '広々'],
+  'demo-23': ['港町', '大きな窓'],
+  'demo-24': ['屋台風', 'にぎやか'],
+  'demo-25': ['北欧風', '暖炉風'],
+  'demo-26': ['地下街', 'ベンチ'],
+};
 
 const AREA_ADDRESS: Record<string, string> = {
   shinagawa: '東京都品川区（デモ用の架空住所）',
   minato: '東京都港区（デモ用の架空住所）',
   shibuya: '東京都渋谷区（デモ用の架空住所）',
+  'osaka-kita': '大阪府大阪市北区（デモ用の架空住所）',
+  'fukuoka-chuo': '福岡県福岡市中央区（デモ用の架空住所）',
+  'sapporo-chuo': '北海道札幌市中央区（デモ用の架空住所）',
 };
+
+const AREA_NAME: Record<string, string> = Object.fromEntries(AREAS.map((a) => [a.id, a.name]));
 
 export function createDemoPlaces(now: Date): Place[] {
   const today = toJst(now).date;
@@ -108,6 +144,7 @@ export function createDemoPlaces(now: Date): Place[] {
       lng: 139.7245,
       zone: { name: '店内全席' },
       verify: ALL_KEYS(10),
+      reservation: true,
       phone: '03-0000-0001',
       officialUrl: 'https://example.com/demo-01',
       description: '室内・冷房ありの確認記録があるデモ施設です。',
@@ -175,6 +212,7 @@ export function createDemoPlaces(now: Date): Place[] {
       lat: 35.6615,
       lng: 139.7305,
       zone: { name: 'ロビーラウンジ' },
+      reservation: true,
       usage: { eligibility: 'guests_only', eligibilityText: '宿泊者のみ利用可', fee: 'paid', feeText: '犬の同伴は1泊ごとに料金あり' },
       verify: ALL_KEYS(40),
     },
@@ -252,6 +290,7 @@ export function createDemoPlaces(now: Date): Place[] {
       zone: { name: '個室', scope: 'private_room' },
       usage: { reservationRequired: 'yes', reservationText: '個室は前日までの予約制', orderRequired: 'yes', orderText: 'コース料理の注文が必要' },
       verify: ALL_KEYS(22),
+      reservation: true,
     },
     {
       id: 'demo-15',
@@ -321,6 +360,69 @@ export function createDemoPlaces(now: Date): Place[] {
       verify: { air_conditioning: 30 },
       description: '室内同伴「可」と入力されていますが、確認記録がないため未確認として扱います。',
     },
+    // ---- 全国展開の確認用（大阪・福岡・札幌） ----
+    {
+      id: 'demo-21',
+      name: 'デモ・かわべりカフェ梅田',
+      category: 'cafe',
+      areaId: 'osaka-kita',
+      lat: 34.7045,
+      lng: 135.4985,
+      verify: ALL_KEYS(12),
+      reservation: true,
+      description: '大阪のデモ施設です。',
+    },
+    {
+      id: 'demo-22',
+      name: 'デモ・北区ショッピングモール ペットラウンジ',
+      category: 'commercial',
+      areaId: 'osaka-kita',
+      lat: 34.7012,
+      lng: 135.4952,
+      zone: { name: '3階ペットラウンジ', carry: { status: 'confirmed', allowed: ['cart', 'bag'] } },
+      verify: ALL_KEYS(20),
+    },
+    {
+      id: 'demo-23',
+      name: 'デモ・天神みなとダイニング',
+      category: 'restaurant',
+      areaId: 'fukuoka-chuo',
+      lat: 33.5915,
+      lng: 130.3995,
+      usage: { orderRequired: 'yes', orderText: '1人1品以上' },
+      verify: ALL_KEYS(15),
+      reservation: true,
+    },
+    {
+      id: 'demo-24',
+      name: 'デモ・けやき通り喫茶（冷房未確認）',
+      category: 'cafe',
+      areaId: 'fukuoka-chuo',
+      lat: 33.5862,
+      lng: 130.3905,
+      zone: { airConditioning: 'unknown' },
+      verify: { indoor_dogs: 30, dog_conditions: 30 },
+    },
+    {
+      id: 'demo-25',
+      name: 'デモ・大通りノルドカフェ',
+      category: 'cafe',
+      areaId: 'sapporo-chuo',
+      lat: 43.0605,
+      lng: 141.3505,
+      verify: ALL_KEYS(7),
+    },
+    {
+      id: 'demo-26',
+      name: 'デモ・地下街の休憩スペース',
+      category: 'other_rest',
+      areaId: 'sapporo-chuo',
+      lat: 43.0625,
+      lng: 141.3545,
+      zone: { name: '地下休憩スペース', carry: { status: 'confirmed', allowed: ['cart', 'bag', 'held'] } },
+      usage: { water: 'no' },
+      verify: ALL_KEYS(25),
+    },
   ];
 
   return specs.map((s) => ({
@@ -341,6 +443,11 @@ export function createDemoPlaces(now: Date): Place[] {
     verifications: verifs(now, s.id, s.verify),
     phone: s.phone,
     officialUrl: s.officialUrl,
+    reservationUrl: s.reservation ? `https://example.com/${s.id}/reserve` : undefined,
+    atmosphereTags: DEMO_TAGS[s.id] ?? [],
+    // デモでは実在の店舗写真に見える画像を使わない（一覧はイラストで表示）
+    media: [],
+    areaName: AREA_NAME[s.areaId],
     description: s.description,
     isDemo: true,
     createdAt: daysAgoIso(now, 300),

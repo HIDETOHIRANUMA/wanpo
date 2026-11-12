@@ -32,8 +32,12 @@ export interface PlaceRow {
   photo_rights: string | null;
   photo_credit: string | null;
   description: string | null;
+  reservation_url: string | null;
+  atmosphere_tags: string[] | null;
   created_at: string;
   updated_at: string;
+  areas?: { name: string; prefecture: string } | null;
+  place_media?: MediaRow[] | null;
   place_dog_zones: ZoneRow[] | null;
   place_hours: HourRow[] | null;
   place_hour_exceptions: HourExceptionRow[] | null;
@@ -84,10 +88,21 @@ export interface VerificationRow {
   evidence_note: string | null;
 }
 
+export interface MediaRow {
+  id: string;
+  url: string;
+  kind: 'exterior' | 'interior' | 'atmosphere' | 'dog_area';
+  caption: string | null;
+  rights: string | null;
+  credit: string | null;
+  sort: number;
+}
+
 export interface AreaRow {
   id: string;
   name: string;
   prefecture: string;
+  prefecture_code: number | null;
   lat: number;
   lng: number;
 }
@@ -96,6 +111,28 @@ export interface StationRow {
   id: string;
   name: string;
   area_id: string;
+  line_name: string | null;
+  operator: string | null;
   lat: number;
   lng: number;
+}
+
+export interface ReviewRow {
+  id: string;
+  place_id: string;
+  nickname: string;
+  body: string;
+  tags: string[] | null;
+  visited_on: string | null;
+  published_at: string | null;
+  status?: 'pending' | 'approved' | 'rejected' | 'hidden';
+}
+
+export interface PhotoRow {
+  id: string;
+  place_id: string;
+  storage_path: string;
+  caption: string | null;
+  published_at: string | null;
+  status?: 'pending' | 'approved' | 'rejected' | 'hidden';
 }
