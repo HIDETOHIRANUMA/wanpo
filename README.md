@@ -76,7 +76,7 @@ npx expo start              # 起動。QRコードを Expo Go または開発ビ
 | 位置情報 | 利用時の取得は可 | 同左（本アプリはバックグラウンド取得を使わない） |
 | 設定変更 | `app.config.ts` のネイティブ設定は反映されない | 変更のたびに再ビルドが必要 |
 
-Web プレビュー（`npx expo start --web`）では地図を表示せず説明と一覧のみです。**Web で動いたことは iOS / Android の動作確認の代わりになりません。**
+Web プレビュー（`npx expo start --web`）では地図を表示せず説明と一覧のみです。共有用に1ファイルの HTML にまとめる場合は `node scripts/build-web-preview.mjs`（デモモード固定、`dist-web-preview/index.html` に出力）。**Web で動いたことは iOS / Android の動作確認の代わりになりません。**
 
 ---
 

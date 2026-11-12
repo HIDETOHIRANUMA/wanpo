@@ -20,3 +20,5 @@ coverage/
 supabase/.temp/
 supabase/.branches/
 tmp/
+dist-web-preview/
+dist-web-preview-raw/

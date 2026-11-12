@@ -38,7 +38,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
     web: { favicon: './assets/favicon.png' },
     plugins: [
-      'expo-router',
+      // WEB_PREVIEW=1 のときは Web を1ファイルにまとめるため、ルートの分割読み込みを止める（scripts/build-web-preview.mjs）
+      process.env.WEB_PREVIEW === '1' ? ['expo-router', { asyncRoutes: false }] : 'expo-router',
       [
         'expo-location',
         {
